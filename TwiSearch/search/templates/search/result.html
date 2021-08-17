@@ -1,0 +1,25 @@
+{% load static %}
+<link rel="stylesheet" type="text/css" href="{% static 'search/style.css' %}">
+
+<div style="text-align:center">
+<strong>{{ length }}件を取得しました。<br></strong>
+
+<form action="{% url 'redraw' %}" method="post">
+    {% for field in form %}
+    {{ field }}
+    {% endfor %}
+    {% csrf_token %}
+    <input type="submit" value="表示">
+</form>
+
+<form action="{% url 'index' %}"method="post">
+    {% csrf_token %}
+    <input type="submit" value="検索画面へ">
+</form>
+
+<br>
+</div>
+
+{% for tweet in tweet_list %}
+<a href={{ tweet.link }}>{{ tweet }}</a> <br><br>
+{% endfor %}

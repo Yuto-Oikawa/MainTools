@@ -1,0 +1,16 @@
+a {
+    color: black;
+}
+
+ul
+{
+    list-style-type: none;
+}
+
+
+body {
+    background: white url("images/background.gif");
+}
+
+input.word {width: 300px;}
+input.num {width: 40px;}

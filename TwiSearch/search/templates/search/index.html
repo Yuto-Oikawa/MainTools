@@ -1,0 +1,117 @@
+{% load static %}
+<link rel="stylesheet" type="text/css" href="{% static 'search/style.css' %}">
+
+<h1>　　　　　　　　　　　　　Twitter キーワード検索補助システム</h1>
+
+
+<script type="text/javascript">
+    //今日の日時を表示
+        window.onload = function () {
+            //今日の日時を表示
+            var date = new Date()
+            var year = date.getFullYear()
+            var month = date.getMonth() + 1
+            var day = date.getDate()
+            var day1 = date.getDate()-1
+            var day2 = date.getDate()-2
+            var day3 = date.getDate()-3
+            var day4 = date.getDate()-4
+            var day5 = date.getDate()-5
+            var day6 = date.getDate()-6
+            var day7 = date.getDate()-7
+            var hour = date.getHours();
+            var min = date.getMinutes();
+            var sec = date.getSeconds();
+
+          
+            var toTwoDigits = function (get_num, digit) {
+              get_num += ''
+              if (get_num.length < digit) {
+                get_num = '0' + get_num
+              }
+              return get_num
+            }
+            
+            var yyyy = toTwoDigits(year, 4)
+            var mm = toTwoDigits(month, 2)
+            var dd = toTwoDigits(day, 2)
+            var dd1 = toTwoDigits(day1, 2)
+            var dd2 = toTwoDigits(day2, 2)
+            var dd3 = toTwoDigits(day3, 2)
+            var dd4 = toTwoDigits(day4, 2)
+            var dd5 = toTwoDigits(day5, 2)
+            var dd6 = toTwoDigits(day6, 2)
+            var dd7 = toTwoDigits(day7, 2)
+
+            var ymd = yyyy + "-" + mm + "-" + dd;
+            var ymd1 = yyyy + "-" + mm + "-" + dd1;
+            var ymd2 = yyyy + "-" + mm + "-" + dd2;
+            var ymd3 = yyyy + "-" + mm + "-" + dd3;
+            var ymd4 = yyyy + "-" + mm + "-" + dd4;
+            var ymd5 = yyyy + "-" + mm + "-" + dd5;
+            var ymd6 = yyyy + "-" + mm + "-" + dd6;
+            var ymd7 = yyyy + "-" + mm + "-" + dd7;
+            var time = hour + ':' + min + ':' + sec;
+
+            document.getElementById("today").value = ymd;
+            document.getElementById("today2").value = ymd;
+            document.getElementById("today-1a").value = ymd1;
+            document.getElementById("today-1b").value = ymd1;
+            document.getElementById("today-2").value = ymd2;
+            document.getElementById("today-3").value = ymd3;
+            document.getElementById("today-4").value = ymd4;
+            document.getElementById("today-5").value = ymd5;
+            document.getElementById("today-6").value = ymd6;
+            document.getElementById("today-7").value = ymd7;
+            document.getElementById("time").value = time;
+        }
+</script>
+
+<div style="text-align:center" >
+<form action="{% url 'search_button' %}" method="post">
+    {% csrf_token %}
+    <input type="text", name="word", class='word' required />
+    <input type="submit" value="検索"><br><br>
+
+    <br><br>検索結果を、以下のように分類します。<br><br>
+    <ul style="text-align:left; width:500px; margin:auto; padding-left:17em;">
+    <li>1次情報:　直接体験　事実　断定表現</li>
+    <li>2次情報:　伝聞推定　ニュース記事</li>
+    <li>1.5次情報:　意見　感情表現　意思表示　呼びかけ　その他</li>
+    </ul>
+    <br><br>
+
+    取得期間<br>
+    <input type="date" name="start_date" id="today-1a" list="data1" autocomplete="off" required>
+    <input type="time" name="start_time" value='00:00:00' autocomplete="on">
+から<br>
+    <input type="date" name="end_date" id="today2" list="data1" autocomplete="off" required>
+    <input type="time" name="end_time" value='00:00:00' autocomplete="on" >
+まで<br><br><br>
+
+<datalist id="data1">
+    <option id="today"></option>
+    <option id="today-1b"></option>
+    <option id="today-2"></option>
+    <option id="today-3"></option>
+    <option id="today-4"></option>
+    <option id="today-5"></option>
+    <option id="today-6"></option>
+    <option id="today-7"></option>
+
+
+    </datalist>
+
+    {{ get_num }}
+    件
+    <br><br><br>
+    {% for field in dim %}
+    {{ dim }}
+    {% endfor %}
+    {% csrf_token %}
+</form>
+
+
+
+</div>
+
