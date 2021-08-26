@@ -13,13 +13,19 @@ from mlask import MLAsk
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-t', '--time', action='store_true')
-parser.add_argument('-e', '--emotion', action='store_true')
+parser.add_argument('-s', '--sentence')
+parser.add_argument('-o', '--output', action='store_true')
+parser.add_argument('-a', '--emotionA', action='store_true')
+parser.add_argument('-b', '--emotionB', action='store_true')
+parser.add_argument('-c', '--content', action='store_true')
+parser.add_argument('-d', '--dataSize', action='store_true')
 args = parser.parse_args()
 
 
 
 def get_dirName(dir:str):
     files = [f for f in os.listdir(dir)]
+    files = [f for f in files if os.path.isfile(os.path.join(dir, f))]
 
     try:
         files.remove('.DS_Store')
@@ -30,7 +36,7 @@ def get_dirName(dir:str):
 
 
 def attach_time(txt_path:str):
-    text = open(txt_path).readlines()
+    text = open(txt_path, errors='ignore').readlines()
 
     time = []
     for line in text:
@@ -50,7 +56,7 @@ def attach_time(txt_path:str):
     df2.to_csv(csv_path, index=False)
 
 
-def emotion_analyzer(dir, csvName:str, target_type=7, output=False):
+def emotion_analyzer(dir, csvName:str, target_type:int=None, output=False):
 
     # データの読み込み
     df = pd.read_csv(dir + csvName)
@@ -150,7 +156,7 @@ def emotion_analyzer(dir, csvName:str, target_type=7, output=False):
     return emotion_ratio, dataSize
 
 
-def create_ratioDF(dir, target_type:int, output=False):
+def create_ratioDF(dir, target_type:int=None, output=False):
 
     emotion =['全感情', '昂', '怖', '安', '驚', '嫌', '好', '哀', '喜', '怒', '恥']
     category = ['1次情報','2次情報','1.5次情報']
@@ -165,7 +171,7 @@ def create_ratioDF(dir, target_type:int, output=False):
         # 1.時刻の文字列をリストに格納
         print(str(csvName))
         time = str(csvName).replace('.csv','') # あらかじめファイル名をツイート時刻の範囲にしておく
-        timeNames.append(time[3:8])            # 時刻の前半だけ格納(12:00)
+        timeNames.append(time.replace(':','/'))            # 時刻の前半だけ格納(12:00)
 
         # 2.各感情語の割合をDFに格納
         emotion_ratio, dataSize = emotion_analyzer(dir,str(csvName),target_type, output)
@@ -193,55 +199,73 @@ def create_ratioDF(dir, target_type:int, output=False):
     return timeNames, dataSize_list, df_emotion, df_category
 
 
-def plot_data(target_type:int):
+def plot_data(df_list:list, typeA=False, typeB=False, content=False, dataSize=False):
     mpl.rcParams['font.family'] = 'Hiragino Maru Gothic Pro'    # WindowsならYu GothicまたはMeiryo
     fig = plt.figure()
 
-    axes_ = fig.add_subplot(1, 1, 1,)
+    if dataSize:
+        axes_ = fig.subplots(1, 1)
+    else:
+        axes_ = fig.subplots(1, len(df_list),)
     # axes_.plot(timeNames,df_emotion.loc['全感情'], label='全感情')
-    plt.ylabel('割合[%]')
+
 
     # 感情カテゴリA
-    if target_type < 4:
-        axes_.plot(timeNames,df_emotion.loc['哀'], label='哀')
-        axes_.plot(timeNames,df_emotion.loc['昂'], label='昂')
-        axes_.plot(timeNames,df_emotion.loc['怖'], label='怖')
-        axes_.plot(timeNames,df_emotion.loc['嫌'], label='嫌')
-        axes_.plot(timeNames,df_emotion.loc['驚'], label='驚')
+    if typeA:
+        for i in range(len(df_list)):
+            axes_[i].plot(timeNames,df_list[i].loc['哀'], label='哀')
+            axes_[i].plot(timeNames,df_list[i].loc['昂'], label='昂')
+            axes_[i].plot(timeNames,df_list[i].loc['怖'], label='怖')
+            axes_[i].plot(timeNames,df_list[i].loc['嫌'], label='嫌')
+            axes_[i].plot(timeNames,df_list[i].loc['驚'], label='驚')
+            axes_[i].set_xticklabels(timeNames,rotation=270)
+            axes_[i].legend(loc='upper right')
 
-        if target_type == 1:
-            axes_.set_title('感情カテゴリの変化A(1次情報)')
-        elif target_type == 2:
-            axes_.set_title('感情カテゴリの変化A(1.5次情報)')
-        elif target_type == 3:
-            axes_.set_title('感情カテゴリの変化A(1次情報+1.5次情報)')
+            if i == 0:
+                axes_[i].set_ylabel('割合[%]')
+                axes_[i].set_title('1次情報')
+            elif i == 1:
+                axes_[i].set_title('1.5次情報')
+            elif i == 2:
+                axes_[i].set_title('1次情報 + 1.5次情報')
+
+            plt.suptitle('感情カテゴリの変化A')
+        
 
     # 感情カテゴリB
-    elif target_type < 7:
-        axes_.plot(timeNames,df_emotion.loc['安'], label='安')
-        axes_.plot(timeNames,df_emotion.loc['喜'], label='喜')
-        axes_.plot(timeNames,df_emotion.loc['好'], label='好')
-        axes_.plot(timeNames,df_emotion.loc['怒'], label='怒')
-        axes_.plot(timeNames,df_emotion.loc['恥'], label='恥')
+    elif typeB:
+        for i in range(len(df_list)):
+            axes_[i].plot(timeNames,df_list[i].loc['安'], label='安')
+            axes_[i].plot(timeNames,df_list[i].loc['喜'], label='喜')
+            axes_[i].plot(timeNames,df_list[i].loc['好'], label='好')
+            axes_[i].plot(timeNames,df_list[i].loc['怒'], label='怒')
+            axes_[i].plot(timeNames,df_list[i].loc['恥'], label='恥')
+            axes_[i].set_xticklabels(timeNames,rotation=270)
+            axes_[i].legend(loc='upper right')
 
-        if target_type == 4:
-            axes_.set_title('感情カテゴリの変化B(1次情報)')
-        elif target_type == 5:
-            axes_.set_title('感情カテゴリの変化B(1.5次情報)')
-        elif target_type == 6:
-            axes_.set_title('感情カテゴリの変化B(1次情報+1.5次情報)')
+            if i == 0:
+                axes_[i].set_ylabel('割合[%]')
+                axes_[i].set_title('1次情報')
+            elif i == 1:
+                axes_[i].set_title('1.5次情報')
+            elif i == 2:
+                axes_[i].set_title('1次情報 + 1.5次情報')
+
+            plt.suptitle('感情カテゴリの変化B')
+
 
     # 内容カテゴリ
-    elif target_type == 7:
+    elif content:
         axes_.plot(timeNames,df_category.loc['1次情報'], label='1次')
         axes_.plot(timeNames,df_category.loc['2次情報'], label='2次')
         axes_.plot(timeNames,df_category.loc['1.5次情報'], label='1.5次')
         axes_.set_title('内容カテゴリの変化')
+        plt.xticks(rotation=270)
+        plt.legend(loc='upper right')
+
     
     # データ件数
-    else:
-        dir_name = ['#大雨', '#豪雨', '#大雨特別警報', '#線状降水帯', ]
-        #dir_name = ['#秋雨前線', '#洪水',  '#非常に激しい雨', '#猛烈な雨']
+    elif dataSize:
         
         for dir in dir_name:
             dir += '/csv/'
@@ -251,14 +275,14 @@ def plot_data(target_type:int):
             label = str(dir).replace('/csv/', '')
             dateName = sorted(files)
         
-            _, dataSize_list, _, _ = create_ratioDF(dir,8)
+            _, dataSize_list, _, _ = create_ratioDF(dir)
             axes_.plot(dateName, dataSize_list, label=label)
         
-        axes_.set_title('データ件数の推移A')
+        axes_.set_title('データ件数の推移B')
+        plt.xticks(rotation=270)
         plt.ylabel('件数[件]')
+        plt.legend(loc='upper right')
 
-    plt.xticks(rotation=270)
-    plt.legend(loc='upper right')
     
     # x軸目盛りを間引く
     # xaxis_ = axes_.xaxis
@@ -273,9 +297,9 @@ def plot_data(target_type:int):
 
 if __name__ == '__main__':
     
+    
     if args.time:
         # csvファイルの列に投稿時刻を付与(txtファイルから時刻を取得)
-        
         dir_name = ['#大雨', '#豪雨', '#大雨特別警報', '#線状降水帯', ]
         dir_name2 = ['#秋雨前線', '#洪水',  '#非常に激しい雨', '#猛烈な雨']
         dir_name.extend(dir_name2)
@@ -287,29 +311,73 @@ if __name__ == '__main__':
                 attach_time(dir + str(txt))
                 
                 
-    elif args.emotion:
+    elif args.sentence is not None:
         # 単文の感情解析
-
         emotion_analyzer = MLAsk('-d /usr/local/lib/mecab/dic/ipadic/')
-        s = '怖い'
-        analyze = emotion_analyzer.analyze(s)
+        analyze = emotion_analyzer.analyze(args.sentence)
         print(analyze)
+
+
+    else:        
+        # 分析対象のファイルが存在するフォルダをdirに指定 
+        dir = '#大雨/csv/'                              
+        target = {1:'priA', 2:'sesA', 3:'bothA', 4:'priB', 5:'sesB', 6:'bothB', 7:'category', 8:'dataSize'}
+        df_emotion_list = []
         
-
-    else:
-        # 一つのcsvファイルを分析
-        if len(sys.argv) == 2:
-            dir = './'          
-            _, _ = emotion_analyzer(dir, str(sys.argv[1]), output=False)  
-            
-        # dir内の全てのcsvファイルを分析 
-        else:  
-            dir = 'csv/'                              
-            target = {1:'priA', 2:'sesA', 3:'bothA', 4:'priB', 5:'sesB', 6:'bothB', 7:'category', 8:'dataSize'}
-
-            for target_type in range(8,9): # ここの範囲を調整して使う
+        if args.emotionA:
+            for target_type in range(1,4):
                 print(target[target_type])
-                if target_type < 8:
-                    timeNames, dataSize_list, df_emotion, df_category = create_ratioDF(dir, target_type, output=False)
-                plot_data(target_type)
+                timeNames, dataSize_list, df_emotion, df_category = create_ratioDF(dir, target_type, output=False)
+                df_emotion_list.append(df_emotion)
+            plot_data(df_emotion_list, typeA=True)
+            
+            if args.output:
+                print()
+                print('csvのアウトプットは無効化されました')
+                print('(カテゴリのフィルタリングにより，データが欠落するため)')
+                print('-cまたは-dを指定して再度実行して下さい')
+
+        
+        elif args.emotionB:
+            for target_type in range(4,7):
+                print(target[target_type])
+                timeNames, dataSize_list, df_emotion, df_category = create_ratioDF(dir, target_type, output=False)
+                df_emotion_list.append(df_emotion)
+            plot_data(df_emotion_list, typeB=True)
+            
+            if args.output:
+                print()
+                print('csvのアウトプットは無効化されました')
+                print('(カテゴリのフィルタリングにより，データが欠落するため)')
+                print('-cまたは-dを指定して再度実行して下さい')
+                print()
+
+
+        elif args.content:
+                print(target[7])
+                timeNames, dataSize_list, df_emotion, df_category = create_ratioDF(dir, output=args.output)
+                df_emotion_list.append(df_emotion)
+                plot_data(df_emotion_list, content=True)
+                
+                
+        elif args.dataSize:
+            dir_name = ['#大雨', '#豪雨', '#大雨特別警報', '#線状降水帯', ]
+            # dir_name = ['#秋雨前線', '#洪水',  '#非常に激しい雨', '#猛烈な雨']
+
+            print(target[8])
+            for dir in dir_name:
+                timeNames, dataSize_list, df_emotion, df_category = create_ratioDF(dir, output=args.output)
+                df_emotion_list.append(df_emotion)
+            plot_data(df_emotion_list, dataSize=True)
+                
+                                
+        else:
+            # 一つのcsvファイルを分析
+            if len(sys.argv) == 2:
+                dir = './'          
+                _, _ = emotion_analyzer(dir, str(sys.argv[1]), output=False)
+            else:
+                print()
+                print('引数を指定して下さい')
+                print('(python3 emotion_analyzer.py -hで引数一覧を確認できます)')
                 print()
