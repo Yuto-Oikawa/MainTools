@@ -1,9 +1,18 @@
 # coding:utf-8
 import os
+import sys 
 import shutil
-from datetime import timedelta
+import argparse
 import pandas as pd
+from datetime import timedelta
 
+parser = argparse.ArgumentParser()
+parser.add_argument('-cr', '--create', action='store_true')
+parser.add_argument('-co', '--concat', action='store_true')
+parser.add_argument('-s', '--split', action='store_true')
+parser.add_argument('-sa', '--split_all', action='store_true')
+
+args = parser.parse_args()
 
 
 def create_train_csv():
@@ -46,6 +55,28 @@ def create_train_csv():
     df3.to_csv('result.csv', index=False)
 
 
+def concat_all_csv():
+    dir = 'csv/'
+    files = [f for f in os.listdir(dir)]
+    files = [f for f in files if os.path.isfile(os.path.join(dir, f))]
+
+    try:
+        files.remove('.DS_Store')
+    except:
+        pass
+
+    files = sorted(files, reverse=True)
+    origin = files.pop(0)
+    df_concat = pd.read_csv(dir + origin)
+        
+    for csvName in files:
+        df_target = pd.read_csv(dir + csvName)
+        df_concat = pd.concat([df_concat, df_target])
+    
+    df_concat = df_concat.dropna()
+    df_concat.to_csv('result.csv', index=False)
+    
+
 def split_csv_by_time(csvName:str):
     try:
         # [:-4]は/csv/の除去
@@ -81,20 +112,29 @@ def split_csv_by_time(csvName:str):
         
 
 if __name__ == '__main__':
-    # create_train_csv()
+    if args.create:
+        create_train_csv()
+    elif args.concat:
+        concat_all_csv()
+    elif args.split:
+        dir = '#大雨/csv/'  # hoge/csv/の形式で指定しないとエラー
+        split_csv_by_time(sys.argv[1])
 
-    dir_name = ['#大雨/csv/', '#豪雨/csv/', '#大雨特別警報/csv/', '#線状降水帯/csv/', ]
-    dir_name2 = ['#秋雨前線/csv/', '#洪水/csv/',  '#非常に激しい雨/csv/', '#猛烈な雨/csv/']
-    dir_name.extend(dir_name2)
-    
-    for dir in dir_name:
-        files = [f for f in os.listdir(dir)]
-        files = [f for f in files if os.path.isfile(os.path.join(dir, f))]
+    elif args.split_all:
+        # フォルダごとに処理
+        dir_name = ['#大雨', '#豪雨', '#大雨特別警報', '#線状降水帯', ]
+        dir_name2 = ['#秋雨前線', '#洪水',  '#非常に激しい雨', '#猛烈な雨']
+        dir_name.extend(dir_name2)
+        
+        for dir in dir_name:
+            dir += '/csv/'
+            files = [f for f in os.listdir(dir)]
+            files = [f for f in files if os.path.isfile(os.path.join(dir, f))]
 
-        try:
-            files.remove('.DS_Store')
-        except:
-            pass
-    
-        for csvName in sorted(files):
-            split_csv_by_time(str(csvName))
+            try:
+                files.remove('.DS_Store')
+            except:
+                pass
+        
+            for csvName in sorted(files):
+                split_csv_by_time(str(csvName))
