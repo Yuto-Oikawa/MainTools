@@ -137,16 +137,19 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
             active_list.append('')
 
 
-    # 1.頻出のハッシュタグを表示 
+    # 1.ファイル名を表示
+    print(str(csvName))
+    time = str(csvName).replace('.csv','') # あらかじめファイル名をツイート時刻の範囲にしておく
+
+    # 2.頻出のハッシュタグを表示 
     c = collections.Counter(hashTags)
     pprint(c.most_common(5))
 
-    # 2.データ件数を表示
+    # 3.データ件数を表示
     dataSize = len(text_list)
     print(f'件数:{dataSize}件',)
-    del cnt[' ']
         
-    # 3.クラメールの連関係数を表示
+    # 4.クラメールの連関係数を表示
     cramer=0
     if args.output==False:
         cramer = cramersV(df[label], df['emotion'])
@@ -155,19 +158,32 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     else:
         # output==Trueの場合，df['emotion']は未定義と思われる
         print()
-        
-    # 4.感情語が占める割合を算出
-    emotion_ratio = []
-    for value in cnt.values():
-        ratio = Decimal(str((value / dataSize) * 100)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        emotion_ratio.append(ratio)
-        
+            
     # 5.感情ラベルの置き換え
     for index, emotion in enumerate(emotion_list):
         emotion_list[index] = replace[emotion]
         cnt[replace[emotion]] += 1
+    del cnt[' ']
+    
+    # 6.感情語が占める割合を算出
+    emotion_ratio = []
+    for value in cnt.values():
+        ratio = Decimal(str((value / dataSize) * 100)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        emotion_ratio.append(ratio)
 
-    # 必要ならcsvで出力
+    # 7.各カテゴリの件数をリストに格納
+    category_size = []
+    category_size.append(len(df[df[label] == 1]))
+    category_size.append(len(df[df[label] == 2]))
+    category_size.append(len(df[df[label] == 0])) 
+    
+    # 8.各カテゴリの割合をDFに格納
+    category_ratio = []
+    for element in category_size:
+        ratio = Decimal(str((element / dataSize) * 100)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        category_ratio.append(ratio)
+
+    # 9.必要ならcsvで出力
     if output == True:
         # 感情分析の結果を列に追加
         df['emotion'] = emotion_list
@@ -176,11 +192,11 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
         df['activation'] = active_list
         df.to_csv(dir+csvName, index=False)
 
-    return emotion_ratio, dataSize, cramer
+    return time, emotion_ratio, category_ratio, dataSize, cramer
 
 
 def create_ratioDF(dir, filter_type:int=None, output=False):
-    # ディレクトリ内のファイル全てを対象に分析する関数
+    # ディレクトリ内のファイル全てを対象にemotion_analyzerを適用する関数
 
     emotion =['昂', '怖', '安', '驚', '嫌', '好', '哀', '喜', '怒', '恥']
     category = ['1次情報','2次情報','1.5次情報']
@@ -190,34 +206,16 @@ def create_ratioDF(dir, filter_type:int=None, output=False):
     timeNames = []
     dataSize_list = []
     cramer_list = []
-
     files = get_dirName(dir)
 
     for csvName in sorted(files):
-        # 1.時刻の文字列をリストに格納
-        print(str(csvName))
-        time = str(csvName).replace('.csv','')              # あらかじめファイル名をツイート時刻の範囲にしておく
-        timeNames.append(time.replace(':','/'))             # 時刻の前半だけ格納(12:00)
 
-        # 2.emotion_analyzerの返り値を格納
-        emotion_ratio, dataSize, cramer = emotion_analyzer(dir,str(csvName),filter_type, output)
+        time, emotion_ratio, category_ratio, dataSize, cramer = emotion_analyzer(dir,str(csvName),filter_type, output)
+        timeNames.append(time.replace(':','/'))             # 時刻の前半だけ格納(12:00)
         df_emotion[time] = emotion_ratio                    # 時刻の後半も含めて列名とする(12:00_24:00)(先頭3文字のファイル番号を除外するならtime[3:])
+        df_category[time] = category_ratio                  # 時刻の後半も格納(12:00_24:00)(ファイル番号は除外)
         dataSize_list.append(dataSize)
         cramer_list.append(cramer)
-
-        # 3.各カテゴリの件数をリストに格納
-        df = pd.read_csv(dir+csvName)
-        category_size = []
-        category_size.append(len(df[df['label'] == 1]))
-        category_size.append(len(df[df['label'] == 2]))
-        category_size.append(len(df[df['label'] == 0])) 
-
-        # 4.各カテゴリの割合をDFに格納
-        category_ratio = []
-        for element in category_size:
-            ratio = Decimal(str((element / dataSize) * 100)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            category_ratio.append(ratio)
-        df_category[time] = category_ratio                  # 時刻の後半も格納(12:00_24:00)(ファイル番号は除外)
 
     # df_emotion.to_csv('emotion_ratio.csv')
     # df_category.to_csv('category_ratio.csv')
@@ -226,19 +224,21 @@ def create_ratioDF(dir, filter_type:int=None, output=False):
 
 
 def calc_spearman(df_emotion):
-    file_num = list(range(0, len(df_emotion.loc['昂'])))
-    if len(df_emotion.loc['昂']) == 1:
+    file_num = list(range(0, len(df_emotion.loc['怖'])))
+    if len(df_emotion.loc['怖']) == 1:
         print('ファイル数が1だったため，値が可視化できませんでした')
         print()
 
     emo_list =['昂', '怖', '安', '驚', '嫌', '好', '哀', '喜', '怒', '恥']
     correlation_dict = {}
     
+    # 全ての感情種類に対して順位相関を算出
     for emotion in emo_list:
         emotion_ratio = df_emotion.loc[emotion]
         correlation, pvalue = spearmanr(emotion_ratio, file_num)
         correlation_dict[emotion] = correlation
 
+    # 降順にソート
     correlation_dict = dict(sorted(correlation_dict.items(), key=lambda x:x[1], reverse=True))
     correlation_list = [v for v in correlation_dict.values()]
     emo_label = [s for s in correlation_dict.keys()]
@@ -301,13 +301,13 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
         for dir in dir_name:
             dir += '/csv/'
             files = get_dirName(dir)
-            files = [s.replace('.csv','') for s in files]
-            files = [s.replace(':','/') for s in files]
+            
+            files = [s.replace('.csv','').replace(':','/') for s in files]
             label = str(dir).replace('/csv/', '')
-            dateName = sorted(files)
+            dateName = sorted(files)        # 一日のツイートが1ファイルに格納されていると仮定
         
             _, _, _, dataSize_list, _ = create_ratioDF(dir, output=args.output)
-            if len(dataSize_list) == 1:
+            if len(dataSize_list) != 1:
                 axes_.plot(dateName, dataSize_list, label=label)
             else:
                 print('ファイル数が1の場合，推移が可視化できません')
@@ -323,12 +323,14 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
     elif cramer:
         ## 値の推移を折線グラフで可視化
         # for dir in dir_name:
+        
         #     dir += '/csv/'
         #     files = get_dirName(dir)
-        #     files = [s.replace('.csv','') for s in files]
-        #     files = [s.replace(':','/') for s in files]
+        
+        #     files = [s.replace('.csv','').replace(':','/') for s in files]
         #     label = str(dir).replace('/csv/', '')
         #     dateName = sorted(files)
+        
         #     _, _, _, _, cramer_list = create_ratioDF(dir)
         #     axes_.plot(dateName, cramer_list, label=label)
         
@@ -345,6 +347,7 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
             _, _, _, _, cramer_list = create_ratioDF(dir, filter_type=-1, output=False)
             cramer_dict[dir] = np.average(cramer_list)
         
+        # 降順にソート
         cramer_dict = dict(sorted(cramer_dict.items(), key=lambda x:x[1], reverse=True))
         cramer_avg = [v for v in cramer_dict.values()]
         dir_label = [s[:-5] for s in cramer_dict.keys()]
@@ -471,7 +474,7 @@ if __name__ == '__main__':
             # 一つのcsvファイルを分析
             if len(sys.argv) == 2:
                 dir = './'          
-                _, _ = emotion_analyzer(dir, str(sys.argv[1]), output=False)
+                _, _, _, _, _ = emotion_analyzer(dir, str(sys.argv[1]), output=False)
             else:
                 print()
                 print('引数を指定して下さい')
