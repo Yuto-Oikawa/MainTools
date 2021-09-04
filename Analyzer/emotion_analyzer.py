@@ -77,7 +77,6 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     # データの読み込み
     df = pd.read_csv(dir + csvName)
     df = df.dropna(subset=['Text'])
-    text_list = df.Text.values.tolist()
 
     # カテゴリのフィルタリング
     label = 'pred' if BERT == True else 'label'
@@ -89,7 +88,10 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     elif filter_type == 3:
         df = df[df[label] != 2]
     else: pass
-        
+    
+    # フィルタリング後に読み込む
+    text_list = df.Text.values.tolist()
+
     # 辞書までのパスはmecab -Dで確認可能
     emotion_analyzer = MLAsk('-d /usr/local/lib/mecab/dic/ipadic')
 
@@ -151,7 +153,7 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
         
     # 4.クラメールの連関係数を表示
     cramer=0
-    if args.output==False:
+    if (args.output==False) and (filter_type != 1) and (filter_type != 2) :
         cramer = cramersV(df[label], df['emotion'])
         print(f'連関係数:{cramer:.3f}')
         print()
@@ -177,7 +179,7 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     category_size.append(len(df[df[label] == 2]))
     category_size.append(len(df[df[label] == 0])) 
     
-    # 8.各カテゴリの割合をDFに格納
+    # 8.各カテゴリの割合をリストに格納
     category_ratio = []
     for element in category_size:
         ratio = Decimal(str((element / dataSize) * 100)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -383,7 +385,7 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
 
 if __name__ == '__main__':
     dir_name = ['#大雨', '#豪雨', '#洪水','#線状降水帯', '#秋雨前線', '#大雨特別警報']
-    dir = '#洪水/csv/'
+    dir = '#大雨/csv/'
 
     if args.time:
         # csvファイルの列に投稿時刻を付与(txtファイルから時刻を取得)
