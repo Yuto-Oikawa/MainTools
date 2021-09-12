@@ -219,7 +219,7 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     
     # 9. 感情カテゴリの割合を表示
     try:
-        print(df['emotion'].value_counts())
+        emo_each = df['emotion'].value_counts()
     except KeyError:
         pass
 
@@ -232,7 +232,7 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
         df['activation'] = active_list
         df.to_csv(dir+csvName, index=False)
 
-    return time, emotion_ratio, category_ratio, dataSize, cramer
+    return time, emotion_ratio, category_ratio, dataSize, cramer, emo_each
 
 
 def create_ratioDF(dir, filter_type:int=None, output=False):
@@ -250,7 +250,7 @@ def create_ratioDF(dir, filter_type:int=None, output=False):
 
     for csvName in sorted(files):
 
-        time, emotion_ratio, category_ratio, dataSize, cramer = emotion_analyzer(dir,str(csvName),filter_type, output)
+        time, emotion_ratio, category_ratio, dataSize, cramer, _ = emotion_analyzer(dir,str(csvName),filter_type, output)
         timeNames.append(time.replace(':','/'))             # 時刻の前半だけ格納(12:00)
         df_emotion[time] = emotion_ratio                    # 時刻の後半も含めて列名とする(12:00_24:00)(先頭3文字のファイル番号を除外するならtime[3:])
         df_category[time] = category_ratio                  # 時刻の後半も格納(12:00_24:00)(ファイル番号は除外)
@@ -286,16 +286,16 @@ def calc_spearman(df_emotion):
     return correlation_list, emo_label
 
 
-def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content=False, dataSize=False, cramer=False, spearman=False):
+def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content=False, dataSize=False, cramer=False, spearman=False, single=False):
     mpl.rcParams['font.family'] = 'Hiragino Maru Gothic Pro' # WindowsならYu GothicまたはMeiryo
     fig = plt.figure()
 
     if (dataSize or cramer) == True:
         axes_ = fig.subplots(1, 1)
+    elif single == True:
+        pass     
     else:
         axes_ = fig.subplots(1, len(df_list))
-    # axes_.plot(timeNames,df_emotion.loc['全感情'], label='全感情')
-
 
     # 感情カテゴリ
     if (typeA or typeB)==True:
@@ -414,7 +414,29 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
                 axes_.set_title(f'{dir}')
                 plt.suptitle(f'スピアマンの順位相関係数 (経過時間-感情)')
 
-            
+    
+    elif single:
+        _, _, _, _, _, emo_each1 = emotion_analyzer(dir, args.single, filter_type=1, output=False)
+        _, _, _, _, _, emo_each2 = emotion_analyzer(dir, args.single, filter_type=2, output=False)
+        _, _, _, _, _, emo_each3 = emotion_analyzer(dir, args.single, filter_type=3, output=False)
+        
+        axes_ = fig.subplots(1, 3)
+        axes_[0].set_title('1次')
+        axes_[1].set_title('1.5次')
+        axes_[2].set_title('1次 + 1.5次')
+
+        emo_each1[1:].plot.bar(ax=axes_[0])
+        emo_each2[1:].plot.bar(ax=axes_[1])
+        emo_each3[1:].plot.bar(ax=axes_[2])
+        plt.setp(axes_[0].get_xticklabels(), rotation=360)
+        plt.setp(axes_[1].get_xticklabels(), rotation=360)
+        plt.setp(axes_[2].get_xticklabels(), rotation=360)
+
+        plt.show()
+        print(emo_each1)
+        print(emo_each2)
+        print(emo_each3)
+
             
 
     # x軸目盛りを間引く
@@ -528,7 +550,7 @@ if __name__ == '__main__':
 
         elif args.single is not None:
             dir = './'          
-            _, _, _, _, _ = emotion_analyzer(dir, args.single, filter_type=3, output=False)
+            plot_data(dir, single=True)
                 
         else:
             print()
