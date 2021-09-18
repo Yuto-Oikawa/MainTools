@@ -1,6 +1,5 @@
 import re
 import os
-import sys 
 import argparse
 import collections
 from pprint import pprint
@@ -12,6 +11,11 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
 from mlask import MLAsk
+
+import spacy
+from spacy.matcher import Matcher
+nlp = spacy.load('ja_ginza')
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-t', '--time', action='store_true')
@@ -301,19 +305,15 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
     if (typeA or typeB)==True:
         for i in range(len(df_list)):
             if typeA:
-                axes_[i].plot(timeNames,df_list[i].loc['哀'], label='哀')
-                # axes_[i].plot(timeNames,df_list[i].loc['昂'], label='昂')
-                # axes_[i].plot(timeNames,df_list[i].loc['怖'], label='怖')
-                # axes_[i].plot(timeNames,df_list[i].loc['嫌'], label='嫌')
-                # axes_[i].plot(timeNames,df_list[i].loc['驚'], label='驚')
-                plt.suptitle(f' 感情カテゴリの割合推移A ({dir[:-5]})') # [:-5]は/csv/の除去
-            elif typeB:
                 axes_[i].plot(timeNames,df_list[i].loc['安'], label='安')
-                axes_[i].plot(timeNames,df_list[i].loc['喜'], label='喜')
-                axes_[i].plot(timeNames,df_list[i].loc['好'], label='好')
+                axes_[i].plot(timeNames,df_list[i].loc['嫌'], label='嫌')
+                axes_[i].plot(timeNames,df_list[i].loc['驚'], label='驚')
+                #plt.suptitle(f' 感情カテゴリの割合推移A') 
+            elif typeB:
+                axes_[i].plot(timeNames,df_list[i].loc['哀'], label='哀')
                 axes_[i].plot(timeNames,df_list[i].loc['怒'], label='怒')
-                axes_[i].plot(timeNames,df_list[i].loc['恥'], label='恥')
-                plt.suptitle(f'感情カテゴリの割合推移B ({dir[:-5]})')
+                axes_[i].plot(timeNames,df_list[i].loc['喜'], label='喜')
+                #plt.suptitle(f'感情カテゴリの割合推移B')
 
             axes_[i].set_xticklabels(timeNames,rotation=270)
             axes_[i].legend(loc='upper right')
@@ -321,7 +321,7 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
         axes_[0].set_ylabel('割合[%]')
         axes_[0].set_title('1次情報')
         axes_[1].set_title('1.5次情報')
-        axes_[2].set_title('1次情報 + 1.5次情報')
+        #axes_[2].set_title('1次情報 + 1.5次情報')
 
 
     # 内容カテゴリ
@@ -396,7 +396,7 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
         plt.ylabel("値")
         plt.grid(True)
 
-    
+
     # スピアマンの順位相関係数
     elif spearman:
         emotion_variety = np.array(list(range(10)))
@@ -414,31 +414,31 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
                 axes_.set_title(f'{dir}')
                 plt.suptitle(f'スピアマンの順位相関係数 (経過時間-感情)')
 
-    
+    # 感情語の出現件数
     elif single:
         _, _, _, _, _, emo_each1 = emotion_analyzer(dir, args.single, filter_type=1, output=False)
         _, _, _, _, _, emo_each2 = emotion_analyzer(dir, args.single, filter_type=2, output=False)
-        _, _, _, _, _, emo_each3 = emotion_analyzer(dir, args.single, filter_type=3, output=False)
         
-        axes_ = fig.subplots(1, 3)
-        axes_[0].set_title('1次')
-        axes_[1].set_title('1.5次')
-        axes_[2].set_title('1次 + 1.5次')
+        axes_ = fig.subplots(1, 2)
+        axes_[0].set_title('1次情報')
+        axes_[1].set_title('1.5次情報')
 
         emo_each1[1:].plot.bar(ax=axes_[0])
         emo_each2[1:].plot.bar(ax=axes_[1])
-        emo_each3[1:].plot.bar(ax=axes_[2])
         plt.setp(axes_[0].get_xticklabels(), rotation=360)
         plt.setp(axes_[1].get_xticklabels(), rotation=360)
-        plt.setp(axes_[2].get_xticklabels(), rotation=360)
-
-        plt.show()
+        
+        #_, _, _, _, _, emo_each3 = emotion_analyzer(dir, args.single, filter_type=3, output=False)
+        #axes_[2].set_title('1次 + 1.5次')
+        #emo_each3[1:].plot.bar(ax=axes_[2])
+        #plt.setp(axes_[2].get_xticklabels(), rotation=360)
         print(emo_each1)
         print(emo_each2)
-        print(emo_each3)
+        #print(emo_each3)
+
+        plt.show()
 
             
-
     # x軸目盛りを間引く
     # xaxis_ = axes_.xaxis
     # new_xticks = [0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0]  # 点がない場所でも良い
@@ -446,8 +446,68 @@ def plot_data(dir:str=None, df_list:list=None, typeA=False, typeB=False, content
     # xaxis_.set_major_locator(ticker.FixedLocator(new_xticks))
 
     plt.show()
+
+
+def calc_frequency_words(text_list:list):
+    import collections
+    import MeCab
+    m = MeCab.Tagger ('-Ochasen')
     
+    for text in text_list:
+        node = m.parseToNode(text)
+        words=[]
+        while node:
+            hinshi = node.feature.split(",")[0]
+            if hinshi in ["名詞","動詞","形容詞","副詞"]:
+                origin = node.feature.split(",")[6]
+                words.append(origin)
+            node = node.next  
+                    
+    c = collections.Counter(words)
+    pprint(c.most_common(20))
+
+
+def extract_phrase(text_list:list, word:str, front=True):
+    docs = list(nlp.pipe(text_list, disable=['ner']))
+
+    # Matcherの生成
+    matcher = Matcher(nlp.vocab)
+
+    # パターンの追加
+    #pattern = [{"POS": {"IN": ["NOUN", "PROPN"]}}, {"POS": {"IN": ["ADP"]}}, {"POS": {"IN": ["ADJ"]}},]
+    #pattern = [{"POS": {"IN": ["NOUN", "PROPN"]}}, {"POS": {"IN": ["ADP"]}}, {"POS": {"IN": ["VERB"]}},]
+    pattern = [{},{"TEXT": {"REGEX": word}}] if front else [{},{},{},{},{"TEXT": {"REGEX": word}},{},{},{},{},{}]
+
+    matcher.add("", None, pattern)
     
+    # フレーズ抽出
+    text_list = []
+    result_list = []
+    for i, doc in enumerate(docs):
+
+        for match_id, start, end in matcher(doc): 
+            string_id = nlp.vocab.strings[match_id] # マッチしたルール名
+            span = doc[start:end] # マッチしたフレーズ
+
+            if i == 0:
+                text_list.append(span.text)
+                result = string_id + span.text
+                print(result)
+                result_list.append(result)
+            else:
+                if span.text in text_list:
+                    continue
+                else:
+                    result = string_id + span.text
+                    print(result)
+                    result_list.append(result)
+                
+    print()
+    
+    return result_list
+
+
+
 
 if __name__ == '__main__':
     dir_name = ['#大雨', '#豪雨','#秋雨前線' ,'#線状降水帯', '#洪水', '#大雨特別警報', 'ALL']
@@ -478,14 +538,14 @@ if __name__ == '__main__':
             #     dir += '/csv/'
 
             dataSize_all = []
-            for filter_type in range(1,4):
+            for filter_type in range(1,3):
                 print()
                 print('emotion:', task[filter_type])
                 timeNames, df_emotion, _, dataSize_list, _ = create_ratioDF(dir, filter_type, output=False)
                 df_list.append(df_emotion)
                 dataSize_all.append(dataSize_list)
             pprint(dataSize_all)
-                
+            
             if args.emotionA:
                 plot_data(dir, df_list, typeA=True)
             if args.emotionB:
@@ -527,7 +587,7 @@ if __name__ == '__main__':
 
 
         elif args.spearman:
-            title_name = ['1次', '1.5次', '1次 + 1.5次']
+            title_name = ['1次情報', '1.5次情報']
             print(task[7])
             # for dir in dir_name:
             #     dir += '/csv/'
@@ -535,8 +595,8 @@ if __name__ == '__main__':
             df_list.append(df_emotion)
             _, df_emotion2, _, _, _ = create_ratioDF(dir, filter_type=2, output=False)  # 1.5次
             df_list.append(df_emotion2)
-            _, df_emotion3, _, _, _ = create_ratioDF(dir, filter_type=3, output=False)  # 1次 + 1.5次
-            df_list.append(df_emotion3)
+            # _, df_emotion3, _, _, _ = create_ratioDF(dir, filter_type=3, output=False)  # 1次 + 1.5次
+            # df_list.append(df_emotion3)
 
                 
             plot_data(dir, df_list, spearman=True)
@@ -550,8 +610,34 @@ if __name__ == '__main__':
 
         elif args.single is not None:
             dir = './'          
-            plot_data(dir, single=True)
-                
+            #plot_data(dir, single=True)
+            
+            df = pd.read_csv(args.single)
+            df = df.query('pred==1')
+            df = df.query(' emotion=="哀" ')
+            
+            # 具体的な感情語
+            # emo_count = df['detail'].value_counts()
+            # pprint(emo_count)
+            
+            # 特定の感情語でフィルタリング
+            word = "['我慢']"
+            df = df.query(' detail==@word ')
+            # フレーズ抽出
+            text_list = df.Text.values.tolist()
+            word = word.replace("['", "").replace("']", "")
+            result = extract_phrase(text_list, word, front=False)
+            # 頻出フレーズを表示
+            c = collections.Counter(result)
+            pprint(c.most_common(3))
+            print(len(result))
+            print()
+                        
+            # 頻出単語
+            #calc_frequency_words(result)
+
+
+
         else:
             print()
             print('引数を指定して下さい')
