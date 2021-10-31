@@ -1,4 +1,3 @@
-import sys
 import argparse
 import pandas as pd
 import numpy as np
@@ -12,32 +11,26 @@ parser.add_argument('-s2', '--subCategory2', action='store_true')
 parser.add_argument('-d', '--detail', action='store_true')
 args = parser.parse_args()
 
-df1 = pd.read_excel('kappa_data/heavy_rain.xlsx',sheet_name=[2,3,4])
-df2 = pd.read_excel('kappa_data/typhoon_サブカテゴリ統一.xlsx',sheet_name=[0,1,2,3])
+FILE_NAME = 'kappa_data/kappa_first_annotation.xlsx'
+df = pd.ExcelFile(FILE_NAME)
+sheet_names = df.sheet_names
 
 
-def calcKappa(sheetName:int, dataName:str, label=None,detail=False):
-    df = df1 if dataName == 'heavy_rain' else df2
+def calcKappa(sheet_name:str, label=None,detail=False):
+    df = pd.read_excel(FILE_NAME, sheet_name=sheet_name)
     
     if detail == False:
-        y1 = df[sheetName].label.values.tolist()
-        y2 = df[sheetName].others_label.values.tolist()
-        detail1 = (df[sheetName]['label'] == label)
-        detail2 = (df[sheetName]['others_label'] == label)
-        
+        y1 = (df['label'] == label)
+        y2 = (df['others_label'] == label)
         if label == -1:     # 全カテゴリの場合
-            detail1 = y1
-            detail2 = y2
+            y1 = df.label.values.tolist()
+            y2 = df.others_label.values.tolist()
             
-        k = cohen_kappa_score(detail1, detail2)
-        print(name[dataName][sheetName]+": {:.3f}".format(k))    
-
     elif detail == True:
-        y1 = df[sheetName].detail.values.tolist()
-        y2 = df[sheetName].others_detail.values.tolist()
-        k = cohen_kappa_score(y1, y2)
-        print(name[dataName][sheetName]+": {:.3f}".format(k))
-        
+        y1 = df.detail.values.tolist()
+        y2 = df.others_detail.values.tolist()
+
+    k = cohen_kappa_score(y1, y2)
     return k
     
     
@@ -45,16 +38,11 @@ def calcKappa_All(reverse=False):
     y1_list = []
     y2_list = []
 
-    for sheetName in range(3):
-        y1 = df1[sheetName+2].label.values.tolist()
+    for sheet_name in sheet_names:
+        df = pd.read_excel(FILE_NAME, sheet_name=sheet_name)
+        y1 = df.label.values.tolist()
+        y2 = df.others_label.values.tolist()
         y1_list.extend(y1)
-        y2 = df1[sheetName+2].others_label.values.tolist()
-        y2_list.extend(y2)
-
-    for sheetName in range(4):
-        y1 = df2[sheetName].label.values.tolist()
-        y1_list.extend(y1)
-        y2 = df2[sheetName].others_label.values.tolist()
         y2_list.extend(y2)
 
     print()
@@ -69,20 +57,19 @@ def calcKappa_All(reverse=False):
         print(classification_report(y2_list, y1_list, digits = 2,target_names=['1.5次情報','1次情報','2次情報']))
 
 
-def calcKappa_detail(sheetName:int, dataName:str, detail:str, label:int):
+def calcKappa_subCategory(sheet_name:str, detail:str, label:int):
 
-    df = df1 if dataName == 'heavy_rain' else df2
-    detail1 = (df[sheetName]['detail'] == detail)
-    detail2 = (df[sheetName]['others_detail'] == detail)
-    df_Mydetail = df[sheetName][detail1]
-    df_Yourdetail = df[sheetName][detail2]
+    df = pd.read_excel(FILE_NAME, sheet_name=sheet_name)
+    detail1 = (df['detail'] == detail)
+    detail2 = (df['others_detail'] == detail)
+    df_Mydetail = df[detail1]
+    df_Yourdetail = df[detail2]
         
     k = cohen_kappa_score(detail1, detail2)
     meYour_error = df_Mydetail[df_Mydetail['others_label'] != label]    # 自分が付与したサブカテゴリで，他者とカテゴリが異なる場合
     yourMe_error = df_Yourdetail[df_Yourdetail['label'] != label]       # 他者が付与したサブカテゴリで，自分とカテゴリが異なる場合
     
     return k, meYour_error, yourMe_error
-
 
 
 def print_statistic(all:list):
@@ -92,57 +79,66 @@ def print_statistic(all:list):
     min = np.min(all)
     max = np.max(all)
 
-    print()
     print(f"平均値: {avg:.3f}")
     print(f"最大値: {max:.3f}")
     print(f"最小値: {min:.3f}")
     print(f"標準偏差: {sd:.3f}")
-    print()
 
 
 def printKappa(detail=False):
-    # calcKappa()の2つまたは3つの引数をfor文で回す
+    # calcKappa()の1つまたは2つの引数をfor文で回す
     
     if detail == True:                  # サブカテゴリのKappa
         all = []
-        for dataName in name.keys():
-            for sheetName in name[dataName].keys():
-                kappa = calcKappa(sheetName,dataName, detail=True)
-                all.append(kappa)
-        print_statistic(all)
+        for sheet_name in sheet_names:
+            kappa = calcKappa(sheet_name, detail=True)
+            print(f'{sheet_name}, {kappa:.3f}')
+            all.append(kappa)
+        if len(all) > 2:
+            print()
+            print_statistic(all)
+            print()
+            
     
     elif detail == False:               # カテゴリのKappa
-        label_name = {0:'1.5次情報', 1:'1次情報', 2:'2次情報', -1:'全カテゴリ'}
+        label_name = {1:'1次情報', 0:'1.5次情報', 2:'2次情報', -1:'全カテゴリ'}
         
-        for label in label_name.keys():
+        print()
+        for sheet_name in sheet_names:
+            print(sheet_name)
             all = []
-            print(label_name[label])                    # カテゴリごとに分析
             
-            for dataName in name.keys():                # 台風または豪雨の
-                for sheetName in name[dataName].keys(): # 対象となるデータ
-                    kappa = calcKappa(sheetName, dataName, label,detail=False)
-                    all.append(kappa)
-                    
-            print_statistic(all)
+            for label in label_name.keys():
+                kappa = calcKappa(sheet_name, label, detail=False)
+                print(f"{label_name[label]}:{kappa:.3f}")
+                all.append(kappa)
+            print()
+            
+            if len(all) > 2:
+                print_statistic(all)
+                print()
     
 
-def printKappa_subCategory(dataNameMain=False):
-    # calcKappa_detail()の4つの引数をfor文で回す
+def printKappa_subCategory(dataNameMain=True):
+    # calcKappa_subCategory()の3つの引数をfor文で回す
     
     if dataNameMain == True:
-        for  dataName in name.keys():                       # 台風または豪雨の
-            for sheetName in name[dataName].keys():         
-                all = []
-                print()
-                print(name[dataName][sheetName])            # 対象となるデータを
+        for sheet_name in sheet_names:         
+            all = []
+            print(sheet_name)                           # 対象となるデータを
+            print('-'*30)
 
-                for label, list in enumerate(detail_list.values()):
-                    for detail in list.keys():              # サブカテゴリごとに分析
-                        k, meYour_error, yourMe_error = calcKappa_detail(sheetName, dataName, detail, label)
-                        print(list[detail]+" {:.3f}, 及川{}件, 他者{}件".format(k,len(meYour_error),len(yourMe_error)))
-                        all.append(k)
-                        
-                print_statistic(all)
+            for label, list in enumerate(detail_list.values()):
+                for detail in list.keys():              # サブカテゴリごとに分析
+                    k, meYour_error, yourMe_error = calcKappa_subCategory(sheet_name, detail, label)
+                    print(list[detail]+" {:.3f}, 及川{}件, 他者{}件".format(k,len(meYour_error),len(yourMe_error)))
+                    all.append(k)
+                print('-'*30)
+                    
+            print_statistic(all)
+            print('-'*30)
+
+
 
     elif dataNameMain == False:
         for label, list in enumerate(detail_list.values()):
@@ -150,32 +146,27 @@ def printKappa_subCategory(dataNameMain=False):
                 all = []
                 sumA = 0
                 sumB = 0
-                print()
+                print('-'*30)
                 print(list[detail])                              # 対象となるサブカテゴリを
                 
-                for dataName in name.keys():                     # 台風または豪雨の
-                    for sheetName in name[dataName].keys():      # データごとに分析  
-                        k, meYour_error, yourMe_error = calcKappa_detail(sheetName, dataName, detail, label)
-                        all.append(k)
-                        
-                        print(name[dataName][sheetName]+" {:.3f}, 及川{}件, 他者{}件".format(k,len(meYour_error),len(yourMe_error)))
-                        sumA += len(meYour_error)
-                        sumB += len(yourMe_error)
-                
-                print_statistic(all)
-                print('計:及川{}件，他者{}件'.format(sumA,sumB))
-                print()
+                for sheet_name in sheet_names:                   # データごとに分析  
+                    k, meYour_error, yourMe_error = calcKappa_subCategory(sheet_name, detail, label)
+                    all.append(k)
+                    
+                    print(sheet_name+" {:.3f}, 及川{}件, 他者{}件".format(k,len(meYour_error),len(yourMe_error)))
+                    sumA += len(meYour_error)
+                    sumB += len(yourMe_error)
+                print('-'*30)
+                    
+                if len(all) > 2:
+                    print_statistic(all)
+                    print('計:及川{}件，他者{}件'.format(sumA,sumB))
 
 
 
 if __name__ == '__main__':
-    # 設定パラメータ
-    # ここを変更して使う
-    name = {}
-    name['heavy_rain'] = {2:'0706', 3:'0707', 4:'0708'}
-    name['typhoon'] = {0:'9A', 1:'9B', 2:'10A', 3:'10B'}
     listA = {'ik':'意見', 'k':'感情表現', 'is':'意思表示', 'y':'呼びかけ', 's':'その他'}
-    listB = {'t':'直接体験', 'j':'事実', 'd':'断定表現'}
+    listB = {'t':'体験的事実', 'j':'発生的事実', 'd':'言及的事実'}
     listC = {'ds':'伝聞推定', 'u':'ニュース記事'}
     detail_list = {0:listA, 1:listB, 2:listC}
 
@@ -186,9 +177,9 @@ if __name__ == '__main__':
         calcKappa_All(reverse=True)
         
     elif args.subCategory:
-        printKappa_subCategory(dataNameMain=False)
-    elif args.subCategory2:
         printKappa_subCategory(dataNameMain=True)
+    elif args.subCategory2:
+        printKappa_subCategory(dataNameMain=False)
         
     elif args.detail:
         printKappa(detail=True)
