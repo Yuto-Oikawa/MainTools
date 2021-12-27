@@ -11,12 +11,16 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.model_selection import cross_validate, StratifiedKFold, train_test_split
 import spacy
-nlp = spacy.load('ja_ginza')
 
+nlp = spacy.load('ja_ginza')
 vectorizer = TfidfVectorizer(token_pattern='(?u)\\b\\w+\\b')
 target_names = ['NOT','FOUND']
-#df = pd.read_excel(args[2])
-df = pd.read_csv(args[2], sep='\t')
+
+if 'xlsx' in args[2]:
+    df = pd.read_excel(args[2])
+else:
+    df = pd.read_csv(args[2], sep='\t')
+    
 OUTPUT_DIR = 'result/'        
 
 
@@ -127,7 +131,7 @@ def classifier_comparison(x_train, y_train, x_test, y_test, output=True, validat
 
 
     for name, Estimator in all_estimators(type_filter="classifier"):
-        if name in {'CheckingClassifier', 'ClassifierChain', 'MultiOutputClassifier', 'OneVsOneClassifier', 'OneVsRestClassifier', 'OutputCodeClassifier', 'VotingClassifier', 'StackingClassifier','LogisticRegressionCV'} :
+        if name in {'CheckingClassifier', 'ClassifierChain', 'MultiOutputClassifier', 'OneVsOneClassifier', 'OneVsRestClassifier', 'OutputCodeClassifier', 'VotingClassifier', 'StackingClassifier','LogisticRegressionCV', 'RidgeClassifierCV'} :
             continue
         model = Estimator()
 
@@ -154,8 +158,10 @@ def classifier_comparison(x_train, y_train, x_test, y_test, output=True, validat
                 
             
         except TypeError:
+            print('pass')
             pass
         except ValueError:
+            print('pass')
             pass
     
     print()
