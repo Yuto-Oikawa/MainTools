@@ -1,3 +1,4 @@
+### GiNZA==5.1.0 ###
 # coding:utf-8
 import sys
 args = sys.argv
@@ -42,10 +43,7 @@ def tokenPOS():
       doc = nlp.tokenizer(line)
 
       for token in doc:
-        f.write(token.pos_)
-        f.write(' ')
-        f.write(token.orth_)
-        f.write('|')
+        f.write(token.pos_+' '+token.orth_+'|')
 
       f.write('\n')
 
@@ -55,10 +53,7 @@ def lemmaPOS():
       doc = nlp.tokenizer(line)
 
       for token in doc:
-          f.write(token.pos_)
-          f.write(' ')
-          f.write(token.lemma_)
-          f.write('|')
+          f.write(token.pos_+' '+token.lemma_+'|')
           
       f.write('\n')
 
@@ -68,12 +63,10 @@ def dependency():
         doc = nlp(line)
 
         for token in doc:
-            f.write(token.dep_)
-            f.write(' ')
-            f.write(token.orth_)
-            f.write('|')
+            f.write(token.dep_+' '+token.orth_+'|')
 
         f.write('\n')
+        
 
 def change_NER():
   with open(args[1], 'r') as f:  
