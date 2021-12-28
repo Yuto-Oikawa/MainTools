@@ -109,15 +109,6 @@ def change_NER():
             
         f.write('\n')
 
-def change_excel():
-    lines = open('data.txt').read().splitlines()
-
-    df_changed = pd.DataFrame()
-    df_changed['Text'] = lines
-    df['Text'] = df_changed['Text']
-    
-    df.to_csv('result.csv', index=False)
-
 
 def print_usage():
     print()
@@ -137,48 +128,66 @@ def print_usage():
     print('11: lemmaNER')
 
     print()   
+    
+    
+def change_df():
+  lines = open('result.txt').read().splitlines()
 
+  df_changed = pd.DataFrame()
+  df_changed['Text'] = lines
+  df['Text'] = df_changed['Text']
   
+  df.to_csv('result.csv', index=False)
+
 
 if __name__ == '__main__':
 
-  if args[1] in 'txt':
+  if 'txt' in args[1]:
     lines = open(args[1],'r').read().splitlines()
+    
   else:
-    df = pd.read_excel(args[1])
-    lines = df.Text.values.tolist()
-    args[1] = 'data.txt'
+    isChange = True
+    
+    if 'tsv' in args[1]:
+      df = pd.read_csv(args[1], sep='\t')
+    elif 'csv' in args[1]:
+      df = pd.read_csv(args[1])
+    elif 'xlsx' in args[1]:
+      df = pd.read_excel(args[1])
+
+    lines = df.sentence.values.tolist()
+    args[1] = 'result.txt'
 
 
-  try:
+  if args[2] == '1': 
+    tokenize()
+  elif args[2] == '2':
+    lemmatize()
+  elif args[2] == '3':
+    POS()
+  elif args[2] == '4':
+    tokenPOS()
+  elif args[2] == '5':
+    lemmaPOS()
+  elif args[2] == '7':
+    dependency()
+  elif args[2] == ('8' or '9' or '10' or '11'):
 
-    if args[2] == '1': 
-      tokenize()
-    elif args[2] == '2':
-      lemmatize()
-      change_excel()
-    elif args[2] == '3':
-      POS()
-    elif args[2] == '4':
-      tokenPOS()
-    elif args[2] == '5':
-      lemmaPOS()
-    elif args[2] == '7':
+    if args[2] == '9':
       dependency()
+    elif args[2] == '10':
+      tokenize()
+    elif args[2] == '11':
+      lemmatize()
+      
+    change_NER()
 
-    elif args[2] == ('8' or '9' or '10' or '11'):
 
-      if args[2] == '9':
-        dependency()
-      elif args[2] == '10':
-        tokenize()
-      elif args[2] == '11':
-        lemmatize()
-        
-      change_NER()
-
-    else:
-      print_usage()
-
-  except:
+  else:
     print_usage()
+
+
+  if isChange:
+    change_df()
+
+
