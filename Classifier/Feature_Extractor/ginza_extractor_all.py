@@ -18,14 +18,8 @@ def change_phase1():
                 f1.write(token.orth_+' ')
                 f2.write(token.lemma_+' ')
                 f3.write(token.tag_+' ')
-                f4.write(token.pos_)
-                f4.write(' ')
-                f4.write(token.orth_)
-                f4.write('|')
-                f5.write(token.pos_)
-                f5.write(' ')
-                f5.write(token.lemma_)
-                f5.write('|')
+                f4.write(token.pos_+' '+token.orth_+'|')
+                f5.write(token.pos_+' '+token.lemma_+'|')
             f1.write('\n')
             f2.write('\n')                
             f3.write('\n')
@@ -37,10 +31,7 @@ def change_phase1():
             doc = nlp(line)
 
             for token in doc:
-                f.write(token.dep_)
-                f.write(' ')
-                f.write(token.orth_)
-                f.write('|')
+                f.write(token.dep_+' '+token.orth_+'|')
 
             f.write('\n')
 
