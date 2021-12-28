@@ -129,15 +129,6 @@ def print_usage():
 
     print()   
     
-    
-def change_df():
-  lines = open('result.txt').read().splitlines()
-
-  df_changed = pd.DataFrame()
-  df_changed['Text'] = lines
-  df['Text'] = df_changed['Text']
-  
-  df.to_csv('result.csv', index=False)
 
 
 if __name__ == '__main__':
@@ -188,6 +179,6 @@ if __name__ == '__main__':
 
 
   if isChange:
-    change_df()
-
-
+    lines = open('result.txt').read().splitlines()
+    df['Text'] = lines
+    df.to_csv('result.csv', index=False)
