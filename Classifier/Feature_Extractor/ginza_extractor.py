@@ -68,39 +68,56 @@ def dependency():
         f.write('\n')
         
 
-def change_NER():
+def change_NER(x_train):
+
+  result = []
+
+  for line in x_train:
+      sentence = ''
+      text = list(line)
+      doc = nlp(line)
+
+      entity = [ent.label_ for ent in doc.ents]       # 固有表現のラベル
+      start = [ent.start_char for ent in doc.ents]    # 何文字目から固有表現か
+      end = [ent.end_char for ent in doc.ents]        # 何文字目まで固有表現か
+      num = 0                                        
+      nowNER = False
+      
+      for i in range(len(text)):                      # 1文字ずつループ
+          
+          if (len(start) != 0) and (i == start[num]): # 固有表現の開始位置に来たら
+              sentence += entity[num]                 # 固有表現を追加
+              if num < len(start) - 1:                # out of rangeの防止
+                  num += 1
+              nowNER = True
+
+          elif nowNER == True:                        # 固有表現を認識したら
+              if i < end[num-1]:                      # その文字数を消費
+                  continue
+              elif i == end[num-1]:
+                  nowNER = False
+                  sentence += text[i]
+
+          else:
+              sentence += text[i]
+      
+      result.append(sentence)
+
+
+  return result
+
+
+def write_NER():
+
   with open(args[1], 'r') as f:  
     lines = f.read().splitlines()
 
   with open(args[1], 'w') as f:
-    for line in lines:
-        text = list(line)
-        doc = nlp(line)
-
-        entity = [ent.label_ for ent in doc.ents]       # 固有表現のラベル
-        start = [ent.start_char for ent in doc.ents]    # 何文字目から固有表現か
-        end = [ent.end_char for ent in doc.ents]        # 何文字目まで固有表現か
-        num = 0                                        
-        stop = False
-
-        for i in range(len(text)):
-            if (len(start) != 0) and (i == start[num]):
-                f.write(entity[num])
-                if num < len(start) - 1:                # out of rangeの防止
-                    num += 1
-                stop = True
-
-            elif stop == True:
-                if i < end[num-1]:
-                    continue
-                elif i == end[num-1]:
-                    stop = False
-                    f.write(text[i])
-
-            else:
-                f.write(text[i])
-            
-        f.write('\n')
+    lines = change_NER(lines)
+    
+    for sentence in lines:
+      f.write(sentence+'\n')
+    
 
 
 def print_usage():
@@ -155,16 +172,15 @@ if __name__ == '__main__':
     lemmaPOS()
   elif args[2] == '7':
     dependency()
-  elif args[2] == ('8' or '9' or '10' or '11'):
-
-    if args[2] == '9':
-      dependency()
-    elif args[2] == '10':
-      tokenize()
-    elif args[2] == '11':
-      lemmatize()
-      
-    change_NER()
+  elif args[2] == '9':
+    dependency()
+    write_NER()
+  elif args[2] == '10':
+    tokenize()
+    write_NER()
+  elif args[2] == '11':
+    lemmatize()
+    write_NER()
 
 
   else:
