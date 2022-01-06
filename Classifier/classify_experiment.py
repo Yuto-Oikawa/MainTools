@@ -1,5 +1,6 @@
 # coding:utf-8
 import os
+from random import random
 import shutil
 import argparse
 import sys
@@ -7,6 +8,7 @@ import pandas as pd
 import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
+from sklearn.ensemble import BaggingClassifier
 from sklearn.utils import all_estimators
 from sklearn.model_selection import cross_validate, StratifiedKFold, train_test_split
 from sklearn.metrics import confusion_matrix, classification_report
@@ -44,7 +46,6 @@ elif 'tsv' in args.filename:
 
     
 OUTPUT_DIR = 'result/'        
-
 
 
 def tokenize(x_train):
@@ -131,7 +132,7 @@ def create_train_data():
     return x_train, y_train
 
 
-def create_train_test_data():
+def create_train_test_data(num:int=1):
     if args.annotate:
         train_df = df
         
@@ -148,11 +149,24 @@ def create_train_test_data():
         owner = test_df.owner.values.tolist()
         
     else:
-        train_df, test_df = train_test_split(df, test_size=0.2, shuffle=True, random_state=123, stratify=df['label'])
+        k = int(len(df) / 10)
+        dfs = [df.loc[i:i+k-1, :] for i in range(0, len(df), k)]
+        
+        if len(dfs) == 11:
+            test_df1 = dfs.pop(-num)
+            test_df2 = dfs.pop(-(num+1))
+            test_df = pd.concat([test_df1, test_df2])
+        elif len(dfs) == 10:
+            if num != 10:
+                test_df1 = dfs.pop(-num)
+                test_df2 = dfs.pop(-(num+1))
+                test_df = pd.concat([test_df1, test_df2])
+
+        train_df = pd.concat(dfs)
+        # train_df, test_df = train_test_split(df, test_size=0.2, shuffle=True, random_state=123, stratify=df['label'])
         train_df = train_df.replace({'NOT':0, 'FOUND':1})
         test_df = test_df.replace({'NOT':0, 'FOUND':1})
         # print(train_df.head())
-
     
     x_train = train_df.sentence.values.astype('U').tolist()
     x_test_raw = test_df.sentence.values.astype('U').tolist()
@@ -183,7 +197,7 @@ def create_train_test_data():
         return x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index
 
 
-def HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test, clf=LinearSVC(class_weight='balanced')):
+def HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test, clf=BaggingClassifier()):
     
     clf = clf
     clf.fit(x_train, y_train)
@@ -195,6 +209,7 @@ def HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test, clf=LinearS
         print(confusion_matrix(y_test, predict))
         print(classification_report(y_test, predict, target_names=target_names))
         print(f'PR_auc:{pr_auc:.3f}')
+        print()
 
 
     df = pd.DataFrame()    
@@ -212,12 +227,13 @@ def HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test, clf=LinearS
 
     if args.output:
         if args.holdout:
-            df.to_csv(f'result_{clf}.csv', index=False)
+            df = df.query(" true == 0 and predict == 1 ")
+            df.to_csv(f'{clf}_{num}.csv', index=False)
         else:
             df.to_csv(f'{OUTPUT_DIR}{clf}.csv', index=False)
-        
-
-def KFold_validation(x_train, y_train, clf=LinearSVC(class_weight='balanced')):
+            
+            
+def KFold_validation(x_train, y_train, clf=BaggingClassifier()):
     clf = clf
     score_funcs = ['accuracy','precision_macro','recall_macro','f1_macro',]
     scores = cross_validate(clf, x_train, y_train, cv=StratifiedKFold(n_splits=10), scoring = score_funcs)
@@ -225,7 +241,7 @@ def KFold_validation(x_train, y_train, clf=LinearSVC(class_weight='balanced')):
     # with open('voc.txt', 'w') as f:
     #     f.write('\n'.join(vectorizer.vocabulary_.keys()))
 
-    if args.kfold or args.noValidate:
+    if args.kfold:
         print(f'classifier  :{clf}')
         print('accuracy     :{:.2f}'.format(scores['test_accuracy'].mean()))
         print('precision    :{:.2f}'.format(scores['test_precision_macro'].mean()))
@@ -260,7 +276,6 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
             model = Estimator()
 
         print()
-        print()
         print(name)
             
         try:
@@ -279,6 +294,7 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
         precision, recall, thresholds = metrics.precision_recall_curve(y_test, predict)
         pr_auc = metrics.auc(recall, precision)
         print(f'PR_auc:{pr_auc:.3f}')
+        print()
         
         if args.output or args.annotate:
             HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test, clf=model)
@@ -287,10 +303,10 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
             result = classification_report(y_test, predict, digits = 2,target_names=target_names, output_dict=True)
             
             f1 = result['macro avg']['f1-score']
-            # ranking[name] = round(f1, 3)
-            ranking[name] = round(pr_auc, 3)
+            ranking[name] = round(f1, 3)
+            # ranking[name] = round(pr_auc, 3)
         else:
-            f1 = KFold_validation(x_train,y_train, clf=model)
+            # f1 = KFold_validation(x_train,y_train, clf=model)
             #ranking[name] = round(f1, 3)
             ranking[name] = round(pr_auc, 3)
     
@@ -298,7 +314,7 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
     ranking =  sorted(ranking.items(), key=lambda i: i[1], reverse=True)
     for element in ranking:
         print(element)
-    
+
 
 
 if __name__ == '__main__':
@@ -306,9 +322,18 @@ if __name__ == '__main__':
     if args.holdout:
         if args.annotate:
             x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index, n3, vpos, easy, owner = create_train_test_data()
+            HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test)
+
         else:
-            x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index = create_train_test_data()
-        HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test)
+            if args.output:
+                for num in range(1,10):
+                    print(num)
+                    x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index = create_train_test_data(num)
+                    HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test)
+            else:
+                x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index = create_train_test_data()
+                HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test)
+
 
 
     elif args.kfold:
