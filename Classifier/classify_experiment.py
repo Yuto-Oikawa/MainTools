@@ -231,8 +231,9 @@ def KFold_validation(x_train, y_train, clf=LinearSVC(class_weight='balanced')):
         print('precision    :{:.2f}'.format(scores['test_precision_macro'].mean()))
         print('recall       :{:.2f}'.format(scores['test_recall_macro'].mean()))
         print('f1           :{:.2f}'.format(scores['test_f1_macro'].mean()))
+        
     else:
-        print('10Fold_Validation_f1                   :{:.2f}'.format(scores['test_f1_macro'].mean()))
+        print('10Fold_Validation_f1:{:.2f}'.format(scores['test_f1_macro'].mean()))
         return scores['test_f1_macro'].mean()
 
 
@@ -249,6 +250,7 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
     ranking = {}
 
     for name, Estimator in all_estimators(type_filter="classifier"):
+        
         if name in {'CheckingClassifier', 'ClassifierChain', 'MultiOutputClassifier', 'OneVsOneClassifier', 'OneVsRestClassifier', 'OutputCodeClassifier', 'VotingClassifier', 'StackingClassifier','LogisticRegressionCV', 'RidgeClassifierCV'} :
             continue
         
@@ -266,10 +268,10 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
             predict = model.predict(x_test)
         except TypeError:
             print('pass')
-            pass
+            continue
         except ValueError:
             print('pass')
-            pass
+            continue
 
         print()
         print(confusion_matrix(y_test, predict))
@@ -283,11 +285,12 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
 
         if args.noValidate:
             result = classification_report(y_test, predict, digits = 2,target_names=target_names, output_dict=True)
+            
             f1 = result['macro avg']['f1-score']
-            ranking[name] = round(f1, 3)
-            # ranking[name] = round(pr_auc, 3)
+            # ranking[name] = round(f1, 3)
+            ranking[name] = round(pr_auc, 3)
         else:
-            #f1 = KFold_validation(x_train,y_train, clf=model)
+            f1 = KFold_validation(x_train,y_train, clf=model)
             #ranking[name] = round(f1, 3)
             ranking[name] = round(pr_auc, 3)
     
