@@ -9,12 +9,11 @@ import time
 import datetime
 import numpy as np
 import pandas as pd
+import MeCab
 import spacy
-nlp = spacy.load('ja_ginza')
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
 from data import get_tweepy as GT
-
 
 
 def index(request):
@@ -44,7 +43,7 @@ def search_button(request):
 
 def redraw(request):
     lst = create_list(request)
-    length = len(lst)-1 if len(lst) != 0 else 0
+    length = len(lst) if len(lst) != 0 else 0
     template = loader.get_template('search/result.html')
     form = forms.ChkForm()
     form.fields['dim'].initial = request.POST.getlist("dim")
@@ -59,37 +58,40 @@ def data_classify(word):
 
     vectorizer = TfidfVectorizer()
     df = pd.read_excel('data/train/train_tokenized.xlsx')
-    train_all = df.Text.values.tolist()
-    x_train = vectorizer.fit_transform(train_all)
+    x_train = df.Text.values.tolist()
+    x_train = vectorizer.fit_transform(x_train)
     y_train = df.label.values.tolist()
 
     clf = LinearSVC()
     clf.fit(x_train, y_train)
 
-    raw_data_tmp = open('data/'+word+'.txt', 'r', encoding='utf-8').read().split('+＝＝＝＝＝＝＝＝＝＝+')
-    raw_data = [element.replace('\n','') for element in raw_data_tmp]
+    df_result = pd.read_csv(f'data/{word}.csv')
+    raw_data = df_result.text.values.astype('U').tolist()
+    
+    wakati = MeCab.Tagger("-Owakati")
+    # nlp = spacy.load('ja_ginza')
+    x_test = []
 
-    with open('data/'+word+'_tokenized.txt', 'w') as f:
-        for line in raw_data:
-            doc = nlp.tokenizer(line)
-            for token in doc:
-                f.write(token.orth_.strip('\n')+' ')
-            f.write('\n')
+    for sentence in raw_data:
+        sentence = wakati.parse(sentence).split()
+        sentence_tokenize = ''
+        # doc = nlp.tokenizer(str(sentence))
+        # for token in doc:
+        
+        for token in sentence:
+            sentence_tokenize += token+'\n'
+            # sentence_tokenize += token.orth_+'\n'
+            
+        x_test.append(sentence_tokenize)
 
-    test = open('data/'+word+'_tokenized.txt', 'r').read().splitlines()
-    x_test = vectorizer.transform(test)
+    x_test = vectorizer.transform(x_test)
     predict = clf.predict(x_test)
 
-    df = pd.DataFrame()
-    df['Text'] = raw_data
-    df['label'] = predict
-    df.to_csv('data/result.csv', index=False)
+    df_result['label'] = predict
+    df_result.to_csv('data/'+word+'.csv', index=False)
 
-    link = open('data/'+word+'_リンク.txt', 'r').read().split('+＝＝＝＝＝＝＝＝＝＝+')
-    df['link'] = link
-
-    for i in range(len(test)):
-        t = Tweet(text=df['Text'][i], label=df['label'][i], link=df['link'][i])
+    for i in range(len(raw_data)):
+        t = Tweet(text=df_result['text'][i], label=df_result['label'][i], link=df_result['link'][i])
         t.save()
 
 
