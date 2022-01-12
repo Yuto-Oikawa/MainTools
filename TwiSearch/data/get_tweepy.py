@@ -1,14 +1,16 @@
 # coding:utf-8
 
+from os import link
 import tweepy
 import datetime
+import pandas as pd
 from data import check_API_limit as lim
 
 # 認証キーの設定
-Consumer_key = ''
-Consumer_secret = ''
-Access_token = ''
-Access_secret = ""
+Consumer_key = 'D9LR8DyxdTZ7em22ExiJwoa12'
+Consumer_secret = 'MgpbmynhbwE97AZVojQ6lALqOAJt3CaFi5tzITLfjfJBOfVEj2'
+Access_token = '1261226774224007168-DSQssFaChShIiT7BokDkFTi3soL5Vf'
+Access_secret = "9xvphrh4711EFEWIRVV2fPHpci9knnx2xwfg4XPQvy81P"
 
 ### TwitterAPI認証用関数
 def authTwitter():
@@ -31,47 +33,53 @@ def get_tweets(word, start_date, start_time, end_date, end_time, total):
                         until = end_date+'_'+end_time+'_JST',
                         ).items()                  
 
-  with open('data/'+word+'.txt', 'w', encoding='utf-8')as f1, open('data/'+word+'_detail.txt', 'w', encoding='utf-8') as f2, open('data/'+word+'_リンク.txt', 'w', encoding='utf-8') as f3: 
 
-    cnt = 0
-    for tweet in tweets:
-      #if tweet.favorite_count + tweet.retweet_count >= 100:
-        # print('+＝＝＝＝＝＝＝＝＝＝+')
-        # print('twid : ',tweet.id)               # tweetのIDを出力。ユニークなもの
-        # print('user : ',tweet.user.screen_name) # ユーザー名
-        # print('date : ', tweet.created_at)      # 呟いた日時
-        # print(tweet.full_text)                  # ツイート内容
-        # print('favo : ', tweet.favorite_count)  # ツイートのいいね数
-        # print('retw : ', tweet.retweet_count)   # ツイートのリツイート数
+  cnt = 0
+  df = pd.DataFrame()
+  text_list = []
+  date_list = []
+  id_list = []
+  favo_list = []
+  retw_list = []
+  link_list = []
+  
+  for tweet in tweets:
+      # print('+＝＝＝＝＝＝＝＝＝＝+')
+      # print('twid : ',tweet.id)               # tweetのIDを出力。ユニークなもの
+      # print('user : ',tweet.user.screen_name) # ユーザー名
+      # print('date : ', tweet.created_at)      # 呟いた日時
+      # print(tweet.full_text)                  # ツイート内容
+      # print('favo : ', tweet.favorite_count)  # ツイートのいいね数
+      # print('retw : ', tweet.retweet_count)   # ツイートのリツイート数
 
-        _, remaining, _ = lim.get_rate_limit_status()
-        if remaining != 0:
+      _, remaining, _ = lim.get_rate_limit_status()
+      
+      if remaining != 0:
 
-          #if not "RT @" in tweet.full_text[0:4]:
-          f1.write(str(tweet.full_text))
-          f1.write('+＝＝＝＝＝＝＝＝＝＝+')
+        #if not "RT @" in tweet.full_text[0:4]:
+        text_list.append(str(tweet.full_text))
+        id_list.append(str(tweet.id))
+        date_list.append(str(tweet.created_at+datetime.timedelta(hours=9)))
+        favo_list.append(str(tweet.favorite_count))
+        retw_list.append(str(tweet.retweet_count))
+        link_list.append('https://twitter.com/'+str(tweet.user.screen_name)+'/status/'+str(tweet.id))
 
-          f2.write(str(tweet.id))
-          f2.write(' ')
-          f2.write(str(tweet.created_at+datetime.timedelta(hours=9)))
-          f2.write('\n')
-          f2.write(str(tweet.full_text))
-          f2.write('\n')
-          f2.write('+＝＝＝＝＝＝＝＝＝＝+')
-          f2.write('\n')
-          #f2.write(str(tweet.favorite_count))
-          #f2.write(str(tweet.retweet_count))
+        cnt += 1
+        if cnt == total:
+          print(cnt)
+          break
 
-          f3.write('https://twitter.com/'+str(tweet.user.screen_name)+'/status/'+str(tweet.id))
-          f3.write('+＝＝＝＝＝＝＝＝＝＝+')
-          f3.write('\n')
+      else: break
+      
+  df['id'] = id_list
+  df['date'] = date_list
+  df['link'] = link_list
+  df['favo'] = favo_list
+  df['retweet'] = retw_list
+  df['text'] = text_list
 
-          cnt += 1
-          if cnt == total:
-            print(cnt)
-            break
-
-        else: break
+  
+  df.to_csv(f'data/{word}.csv',index=False)
 
 
 
