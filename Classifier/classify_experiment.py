@@ -1,78 +1,116 @@
 # coding:utf-8
+from gettext import ngettext
 import os
-from random import random
 import shutil
 import argparse
-import sys
-import pandas as pd
+import time
 import spacy
+import MeCab
+import openpyxl
+import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
 from sklearn.ensemble import BaggingClassifier
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.utils import all_estimators
 from sklearn.model_selection import cross_validate, StratifiedKFold, train_test_split
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn import metrics
+from sklearn.metrics import make_scorer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('filename')
-parser.add_argument('-a', '--annotate')
-parser.add_argument('-ho', '--holdout', action='store_true')
+parser.add_argument('-ho', '--holdout')
 parser.add_argument('-k', '--kfold', action='store_true')
+parser.add_argument('-sp', '--split', action='store_true')
+parser.add_argument('-a', '--annotate', action='store_true')
 parser.add_argument('-c', '--comparison', action='store_true')
+
+parser.add_argument('-f', '--fast', action='store_true')
+parser.add_argument('-o', '--output', action='store_true')
+parser.add_argument('-m', '--mecab', action='store_true') 
+parser.add_argument('-pr', '--prauc', action='store_true')
 parser.add_argument('-nt', '--noTokenize', action='store_true')
 parser.add_argument('-nv', '--noValidate', action='store_true')
-parser.add_argument('-o', '--output', action='store_true')
+
 parser.add_argument('-l', '--lemmatize', action='store_true')
 parser.add_argument('-t', '--tag', action='store_true')
-parser.add_argument('-p', '--pos', action='store_true')
+parser.add_argument('-po', '--pos', action='store_true')
 parser.add_argument('-tp', '--tokenpos', action='store_true')
 parser.add_argument('-lp', '--lemmapos', action='store_true')
 parser.add_argument('-d', '--dependency', action='store_true')
-parser.add_argument('-ner', '--NER', action='store_true')
+parser.add_argument('-n', '--NER', action='store_true')
 args = parser.parse_args()
 
 
+wakati = MeCab.Tagger("-Owakati")
 nlp = spacy.load('ja_ginza')
 vectorizer = TfidfVectorizer(token_pattern='(?u)\\b\\w+\\b')
 target_names = ['NOT','FOUND']
 
-if 'xlsx' in args.filename:
-    df = pd.read_excel(args.filename)
-elif 'csv' in args.filename:
-    df = pd.read_csv(args.filename)
-elif 'tsv' in args.filename:
-    df = pd.read_csv(args.filename, sep='\t')
 
+def get_dirName(dir:str):
+    files = [f for f in os.listdir(dir)]
+    files = [f for f in files if os.path.isfile(os.path.join(dir, f))]
+
+    try:
+        files.remove('.DS_Store')
+    except:
+        pass
+
+    return files
+
+
+def df_loader(data_name, sheet_name=None):
+    if 'xlsx' in data_name:
+        df = pd.read_excel(data_name, sheet_name=sheet_name)
+    elif 'csv' in data_name:
+        df = pd.read_csv(data_name)
+    elif 'tsv' in data_name:
+        df = pd.read_csv(data_name, sep='\t')
     
-OUTPUT_DIR = 'result/'        
+    if args.kfold:
+        df = df.sample(frac=1, random_state=123)
+
+    return df
 
 
 def tokenize(x_train):
     result = []
-    
-    for sentence in x_train:
-        doc = nlp.tokenizer(str(sentence))
-        sentence_tokenize = ''
-        
-        for token in doc:
-            if args.lemmatize:
-                sentence_tokenize += token.lemma_+'\n'
-            elif args.tag:
-                sentence_tokenize += token.tag_+'\n'
-            elif args.pos:
-                sentence_tokenize += token.pos_+'\n'
-            elif args.tokenpos:
-                sentence_tokenize += token.pos_+' '+token.orth_+'|'   
-            elif args.lemmapos:
-                sentence_tokenize += token.pos_+' '+token.lemma_+'|'
-            elif args.dependency:
-                sentence_tokenize += token.dep_+' '+token.orth_+'|'
 
-            else:
-                sentence_tokenize += token.orth_+'\n'
+    if args.mecab:
+        for sentence in x_train:
+            sentence = wakati.parse(sentence).split()
+            sentence_tokenize = ''
+
+            for token in sentence:
+                sentence_tokenize += token+'\n'
+
+            result.append(sentence_tokenize)
+
+    else:
+        for sentence in x_train:
+            doc = nlp.tokenizer(str(sentence))
+            sentence_tokenize = ''
             
-        result.append(sentence_tokenize)
+            for token in doc:
+                if args.lemmatize:
+                    sentence_tokenize += token.lemma_+'\n'
+                elif args.tag:
+                    sentence_tokenize += token.tag_+'\n'
+                elif args.pos:
+                    sentence_tokenize += token.pos_+'\n'
+                elif args.tokenpos:
+                    sentence_tokenize += token.pos_+' '+token.orth_+'|'   
+                elif args.lemmapos:
+                    sentence_tokenize += token.pos_+' '+token.lemma_+'|'
+                elif args.dependency:
+                    sentence_tokenize += token.dep_+' '+token.orth_+'|'
+
+                else:
+                    sentence_tokenize += token.orth_+'\n'
+                
+            result.append(sentence_tokenize)
         
     return result
 
@@ -117,125 +155,152 @@ def change_NER(x_train):
 
 
 def create_train_data():
+    ### used by annotate_folder(), KFold_validation() and HoldOut_validation()
 
-    x_train = df.sentence.values.astype('U').tolist()
+    if args.kfold:
+        train_df = df.replace({'NOT':0, 'FOUND':1})  
+    else:
+        train_df = df.replace({'NOT':'x', 'FOUND':'o'})  
+    x_train = train_df.sentence.values.astype('U').tolist()
+    y_train = train_df.label.values.tolist()
     
     if args.NER:
         x_train = change_NER(x_train)
-
     if not args.noTokenize:
         x_train = tokenize(x_train)
         
     x_train = vectorizer.fit_transform(x_train)
-    y_train = df.label.values.tolist()
 
     return x_train, y_train
 
 
-def create_train_test_data(num:int=1):
+def create_test_data(data_name, sheet_name=None):
+    ### used by annotate_folder(dir), HoldOut_validation
     if args.annotate:
-        train_df = df
-        
-        if 'xlsx' in args.annotate:
-            test_df = pd.read_excel(args.annotate)
-        elif 'csv' in args.annotate:
-            test_df = pd.read_csv(args.annotate)
-        elif 'tsv' in args.annotate:
-            test_df = pd.read_csv(args.annotate, sep='\t')
-            
+        test_df = df_loader(TARGET_DIR+data_name, sheet_name=sheet_name)
+    elif args.holdout:
+        test_df = df_loader(data_name, sheet_name=sheet_name)
+
+    raw_sentence = test_df.n4.values.astype('U').tolist()
+    y_test = -1
+
+    if args.NER:
+        x_test = change_NER(raw_sentence)
+    if not args.noTokenize:
+        x_test = tokenize(raw_sentence)
+    x_test = vectorizer.transform(x_test)
+
+    try:
+        # Columns to be added to the output file
+        n1 = test_df.n1.values.tolist()
+        n2 = test_df.n2.values.tolist()
         n3 = test_df.n3.values.tolist()
-        vpos = test_df.vpos.values.tolist()
-        easy = test_df.easy.values.tolist()
-        owner = test_df.owner.values.tolist()
-        
-    else:
+    except: return x_test, y_test, raw_sentence, -1,-1,-1
+
+
+    return x_test, y_test, raw_sentence, n1, n2, n3
+
+
+def create_train_test_data(num:int=0):
+    df = df_loader(args.filename)
+
+    if args.split:
         k = int(len(df) / 10)
-        dfs = [df.loc[i:i+k-1, :] for i in range(0, len(df), k)]
+        dfs = [df.loc[i:i+k-1000, :] for i in range(0, len(df), k)]
         
         if len(dfs) == 11:
-            test_df1 = dfs.pop(-num)
-            test_df2 = dfs.pop(-(num+1))
+            test_df1 = dfs.pop(num)
+            test_df2 = dfs.pop(num)
             test_df = pd.concat([test_df1, test_df2])
         elif len(dfs) == 10:
             if num != 10:
-                test_df1 = dfs.pop(-num)
-                test_df2 = dfs.pop(-(num+1))
+                test_df1 = dfs.pop(num)
+                test_df2 = dfs.pop(num)
                 test_df = pd.concat([test_df1, test_df2])
-
         train_df = pd.concat(dfs)
-        # train_df, test_df = train_test_split(df, test_size=0.2, shuffle=True, random_state=123, stratify=df['label'])
-        train_df = train_df.replace({'NOT':0, 'FOUND':1})
-        test_df = test_df.replace({'NOT':0, 'FOUND':1})
+
+    else:
+        train_df, test_df = train_test_split(df, test_size=0.2, stratify=df['label'])
         # print(train_df.head())
-    
+
     x_train = train_df.sentence.values.astype('U').tolist()
-    x_test_raw = test_df.sentence.values.astype('U').tolist()
+    raw_sentence = test_df.sentence.values.astype('U').tolist()
     
     if args.NER:
         x_train = change_NER(x_train)
-        x_test_raw = change_NER(x_test_raw)
+        raw_sentence = change_NER(raw_sentence)
 
     if args.noTokenize:
         x_train = vectorizer.fit_transform(x_train)
-        x_test = vectorizer.transform(x_test_raw)
+        x_test = vectorizer.transform(raw_sentence)
     else:
         x_train = tokenize(x_train)
-        x_test = tokenize(x_test_raw)
+        x_test = tokenize(raw_sentence)
         x_train = vectorizer.fit_transform(x_train)
         x_test = vectorizer.transform(x_test)
 
     y_train = train_df.label.values.tolist()
-    sheet_name = test_df.sheet_name.values.tolist()
-    index = test_df.iloc[:,0].values.tolist()       # 0列目の値(index)をリスト化
+    y_test = test_df.label.values.tolist()
 
-    if args.annotate:
-        y_test = -1
-        return x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index, n3, vpos, easy, owner
-    
-    else:
-        y_test = test_df.label.values.tolist()
-        return x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index
+    try:
+        # Columns to be added to the output file
+        n1 = test_df.n1.values.tolist()
+        n2 = test_df.n2.values.tolist()
+        n3 = test_df.n3.values.tolist()
+    except AttributeError:
+        return x_train, y_train, x_test, y_test, raw_sentence, -1, -1, -1
+
+    return x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3
 
 
-def HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test, clf=BaggingClassifier()):
-    
+def PR_AUC(y_true, y_pred):
+    precision, recall, thresholds = metrics.precision_recall_curve(y_true, y_pred)
+    pr_auc = metrics.auc(recall, precision)
+    return pr_auc
+
+
+def HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, filename=None, n1=None, n2=None, n3=None, clf=CalibratedClassifierCV() ):
     clf = clf
     clf.fit(x_train, y_train)
     predict = clf.predict(x_test)
-    precision, recall, thresholds = metrics.precision_recall_curve(y_test, predict)
-    pr_auc = metrics.auc(recall, precision)
 
-    if args.annotate is None and args.holdout:
+    if args.split:
         print(confusion_matrix(y_test, predict))
         print(classification_report(y_test, predict, target_names=target_names))
-        print(f'PR_auc:{pr_auc:.3f}')
-        print()
+        if args.prauc:
+            pr_auc = PR_AUC(y_test, predict)
+            print(f'PR_AUC:{pr_auc:.3f}')
+            print()
 
+    df = pd.DataFrame()
+    if not args.holdout:
+        try:
+            # Columns to be added to the output file
+            df['n1'] = n1
+            df['n2'] = n2
+            df['n3'] = n3
+        except: pass
 
-    df = pd.DataFrame()    
-    df['index'] = index
-    df['sheet_name'] = sheet_name
-    df['sentence'] = x_test_raw
-    if args.annotate is None:
+        df['ann'] = predict
+        df['res'] = ''
+
+    else:
         df['true'] = y_test
-    df['predict'] = predict
-    if args.annotate:
-        df['n3'] = n3
-        df['vpos'] = vpos
-        df['easy'] = easy
-        df['owner'] = owner
+        df['predict'] = predict
+    df['sentence'] = raw_sentence
+    
+    if args.split:
+        # df = df.query(" true == 'x' and predict == 'o' ")
+        # df = df.query(" true == 'o' and predict == 'x' ") 
+        pass
+    return df
 
-    if args.output:
-        if args.holdout:
-            df = df.query(" true == 0 and predict == 1 ")
-            df.to_csv(f'{clf}_{num}.csv', index=False)
-        else:
-            df.to_csv(f'{OUTPUT_DIR}{clf}.csv', index=False)
-            
-            
-def KFold_validation(x_train, y_train, clf=BaggingClassifier()):
+
+def KFold_validation(x_train, y_train, clf=CalibratedClassifierCV()):
     clf = clf
-    score_funcs = ['accuracy','precision_macro','recall_macro','f1_macro',]
+    score_funcs = { 'accuracy': 'accuracy','precision_macro': 'precision_macro','recall_macro' :'recall_macro','f1_macro': 'f1_macro'}
+    if args.prauc:
+        score_funcs['PR_AUC'] = make_scorer(PR_AUC)
     scores = cross_validate(clf, x_train, y_train, cv=StratifiedKFold(n_splits=10), scoring = score_funcs)
 
     # with open('voc.txt', 'w') as f:
@@ -243,14 +308,85 @@ def KFold_validation(x_train, y_train, clf=BaggingClassifier()):
 
     if args.kfold:
         print(f'classifier  :{clf}')
-        print('accuracy     :{:.2f}'.format(scores['test_accuracy'].mean()))
-        print('precision    :{:.2f}'.format(scores['test_precision_macro'].mean()))
-        print('recall       :{:.2f}'.format(scores['test_recall_macro'].mean()))
-        print('f1           :{:.2f}'.format(scores['test_f1_macro'].mean()))
+        print('accuracy     :{:.3f}'.format(scores['test_accuracy'].mean()))
+        print('precision    :{:.3f}'.format(scores['test_precision_macro'].mean()))
+        print('recall       :{:.3f}'.format(scores['test_recall_macro'].mean()))
+        print('f1           :{:.3f}'.format(scores['test_f1_macro'].mean()))
+        if args.prauc:
+            print('PR_AUC       :{:.3f}'.format(scores['test_PR_AUC'].mean()))
         
     else:
-        print('10Fold_Validation_f1:{:.2f}'.format(scores['test_f1_macro'].mean()))
-        return scores['test_f1_macro'].mean()
+        if args.prauc:
+            print('PR_AUC_10Fold:{:.3f}'.format(scores['test_PR_AUC'].mean()))
+            print('f1_10Fold:{:.3f}'.format(scores['test_f1_macro'].mean()))
+            return scores['test_PR_AUC'].mean(), scores['test_f1_macro'].mean()
+        else:
+            print('f1_10Fold:{:.3f}'.format(scores['test_f1_macro'].mean()))
+            return -1, scores['test_f1_macro'].mean()
+
+
+def split_HoldOut():
+    df_list = []
+    for num in range(0,10,2):
+        print(num)
+        x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3 = create_train_test_data(num)
+        result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence)
+        #result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3)
+
+        if args.output:
+            result.to_csv(f'split_{num}.tsv', sep='\t', index=False, encoding='utf_8_sig')
+            
+        df_list.append(result)
+    df_all = pd.concat(df_list)
+    df_all.to_csv('result.tsv', sep='\t', index=False, encoding='utf_8_sig')
+    calc_frequency_words(df_all.sentence.values.tolist())
+
+
+def annotate_folder():
+    cnt = 0
+    found_ranking  = {}
+    OUTPUT_FILE = 'output.xlsx'
+
+    files = get_dirName(TARGET_DIR)
+    new = openpyxl.Workbook()
+    new.save(OUTPUT_FILE)
+
+    with pd.ExcelWriter(OUTPUT_FILE, mode='a') as writer:
+        start = time.time()
+
+        for i, file in enumerate(sorted(files)):
+            print(i, len(files))
+            NG_count = 0
+
+            x_test, y_test, raw_sentence, n1, n2, n3 = create_test_data(data_name=file)
+            df_result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, file)
+            #df_result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, file, n1,n2,n3)
+
+            if args.output:
+                filename = str(filename).replace('.csv', '')
+                df_result.to_csv(filename+'.tsv', sep='\t', index=False, encoding='utf_8_sig')
+            
+            try:
+                NG_count =df_result['ann'].value_counts()[1]
+            except :pass
+
+            if NG_count > 80:
+                found_ranking[file] = NG_count
+                sheet_name = file.replace('.csv', '')
+                df_result.to_excel(writer, sheet_name=sheet_name)
+                cnt += 1
+    
+    found_ranking =  sorted(found_ranking.items(), key=lambda i: i[1], reverse=True)
+    for element in found_ranking:
+        print(element)
+
+    result = openpyxl.load_workbook(filename=OUTPUT_FILE)
+    result.remove(result['Sheet'])
+    result.save(OUTPUT_FILE)
+
+    print('Added',cnt)
+    elapsed_time = time.time() - start
+    print (f"elapsed_time:{elapsed_time:.3f}[sec]")
 
 
 def classifier_comparison(x_train, y_train, x_test, y_test):
@@ -259,15 +395,22 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
         try:
             os.makedirs(OUTPUT_DIR)
         except FileExistsError:
-            # フォルダの中身を全て削除してから新規作成
+            # !Delete all contents of the folder and then create a new one!
             shutil.rmtree(OUTPUT_DIR)
             os.makedirs(OUTPUT_DIR)
 
-    ranking = {}
+    ranking_pr = {}
+    ranking_f1 = {}
+    ranking_time = {}
+    
+    error_classifier = ['CheckingClassifier', 'ClassifierChain', 'MultiOutputClassifier', 'OneVsOneClassifier', 'OneVsRestClassifier', 'OutputCodeClassifier', 'VotingClassifier', 'StackingClassifier']
+    low_speed_classifier = ['DecisionTreeClassifier','AdaBoostClassifier','LogisticRegressionCV','GradientBoostingClassifier','BaggingClassifier','SVC','RandomForestClassifier','ExtraTreesClassifier','MLPClassifier', 'RidgeClassifierCV']
+    if args.fast:
+        error_classifier += low_speed_classifier
+
 
     for name, Estimator in all_estimators(type_filter="classifier"):
-        
-        if name in {'CheckingClassifier', 'ClassifierChain', 'MultiOutputClassifier', 'OneVsOneClassifier', 'OneVsRestClassifier', 'OutputCodeClassifier', 'VotingClassifier', 'StackingClassifier','LogisticRegressionCV', 'RidgeClassifierCV'} :
+        if name in error_classifier :
             continue
         
         try:
@@ -279,71 +422,120 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
         print(name)
             
         try:
+            start = time.time()
             model.fit(x_train,y_train)
             predict = model.predict(x_test)
         except TypeError:
-            print('pass')
+            print('TypeError')
             continue
         except ValueError:
-            print('pass')
+            print('ValueError')
             continue
 
         print()
         print(confusion_matrix(y_test, predict))
         print(classification_report(y_test, predict, digits = 2,target_names=target_names))
-        precision, recall, thresholds = metrics.precision_recall_curve(y_test, predict)
-        pr_auc = metrics.auc(recall, precision)
-        print(f'PR_auc:{pr_auc:.3f}')
-        print()
-        
-        if args.output or args.annotate:
-            HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test, clf=model)
+
+        if args.output:
+            result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, clf=model)
+            result.to_csv(OUTPUT_DIR+name+'.tsv', sep='\t', index=False, encoding='utf_8_sig')
 
         if args.noValidate:
-            result = classification_report(y_test, predict, digits = 2,target_names=target_names, output_dict=True)
-            
+            result = classification_report(y_test, predict, digits = 2, target_names=target_names, output_dict=True)
             f1 = result['macro avg']['f1-score']
-            ranking[name] = round(f1, 3)
-            # ranking[name] = round(pr_auc, 3)
+            ranking_f1[name] = round(f1, 3)
+            if args.prauc:
+                pr_auc = PR_AUC(y_test, predict)
+                print(f'PR_AUC:{pr_auc:.3f}')
         else:
-            # f1 = KFold_validation(x_train,y_train, clf=model)
-            #ranking[name] = round(f1, 3)
-            ranking[name] = round(pr_auc, 3)
+            pr_auc, f1 = KFold_validation(x_train,y_train, clf=model)
+            ranking_pr[name] = round(pr_auc, 3)
+            ranking_f1[name] = round(f1, 3)
+            
+        elapsed_time = time.time() - start
+        ranking_time[name] = round(elapsed_time,3)
+        print (f"elapsed_time:{elapsed_time:.3f}[sec]")
+        print()
     
     print()
-    ranking =  sorted(ranking.items(), key=lambda i: i[1], reverse=True)
-    for element in ranking:
+    ranking_pr =  sorted(ranking_pr.items(), key=lambda i: i[1], reverse=True)
+    ranking_f1 =  sorted(ranking_f1.items(), key=lambda i: i[1], reverse=True)
+    ranking_time =  sorted(ranking_time.items(), key=lambda i: i[1])
+
+
+    print('time')
+    for element in ranking_time:
         print(element)
+
+    if args.prauc:
+        print()
+        print('PR_AUC')
+        for element in ranking_pr:
+                print(element)
+        
+    print()
+    print('f1')
+    for element in ranking_f1:
+        print(element)
+
+
+def calc_frequency_words(text_list:list):
+    import collections
+    from pprint import pprint
+
+    #You can use mecab-D to check the path.
+    m = MeCab.Tagger ('-d  /usr/local/lib/mecab/dic/ipadic/ -Ochasen')
+    
+    # for text in text_list:
+        # node = m.parseToNode(str(text))
+        # words=[]
+        # while node:
+        #     hinshi = node.feature.split(",")[0]
+        #     if hinshi in ["名詞","動詞","形容詞","副詞"]:
+        #         origin = node.feature.split(",")[6]
+        #         words.append(origin)
+        #     node = node.next  
+
+    words = []
+    text_list = tokenize(text_list)
+    text_list = [s.split() for s in text_list]     
+    for list in text_list:
+        for word in list:
+            if len(word) > 2:
+                words.append(word)
+    c = collections.Counter(words)
+    pprint(c.most_common(20))
 
 
 
 if __name__ == '__main__':
+    df = df_loader(args.filename)
+    # calc_frequency_words(df.sentence.values.tolist())
+    TARGET_DIR = 'tgtfiles/'
+    OUTPUT_DIR = 'result/'
+
     
     if args.holdout:
-        if args.annotate:
-            x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index, n3, vpos, easy, owner = create_train_test_data()
-            HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test)
+            x_train, y_train = create_train_data()
+            x_test, y_test, raw_sentence, n1,n2,n3 = create_test_data(args.holdout)
+            #x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3 = create_train_test_data()
 
-        else:
-            if args.output:
-                for num in range(1,10):
-                    print(num)
-                    x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index = create_train_test_data(num)
-                    HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test)
-            else:
-                x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index = create_train_test_data()
-                HoldOut_validation(x_train, y_train, x_test, x_test_raw, y_test)
-
-
+            result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence)
+            #_ = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3)
+            result.to_csv('result.tsv', sep='\t', index=False, encoding='utf_8_sig')
 
     elif args.kfold:
         x_train, y_train = create_train_data()
         KFold_validation(x_train,y_train)
-    
-    
+
+    elif args.split:
+        split_HoldOut()
+
+    elif args.annotate:
+        x_train, y_train = create_train_data()
+        annotate_folder()
+
     else:
-        if args.annotate:
-            x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index, n3, vpos, easy, owner = create_train_test_data()
-        else:
-            x_train, y_train, x_test, x_test_raw, y_test, sheet_name, index = create_train_test_data()
+        x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3 = create_train_test_data()
         classifier_comparison(x_train, y_train, x_test, y_test)
+        #classifier_comparison(x_train, y_train, x_test, y_test,n1,n2,n3)
