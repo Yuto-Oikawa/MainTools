@@ -20,16 +20,15 @@ nlp = spacy.load('ja_ginza')
 parser = argparse.ArgumentParser()
 parser.add_argument('-t', '--time', action='store_true')
 parser.add_argument('-se', '--sentence')
+parser.add_argument('-ba', '--bar')
 parser.add_argument('-la', '--lineA', action='store_true')
 parser.add_argument('-lb', '--lineB', action='store_true')
 parser.add_argument('-co', '--content', action='store_true')
 parser.add_argument('-d', '--dataSize', action='store_true')
 parser.add_argument('-cr', '--cramer', action='store_true')
 parser.add_argument('-sp', '--spearman', action='store_true')
-parser.add_argument('-ba', '--bar')
 parser.add_argument('-o', '--output', action='store_true')
 parser.add_argument('-bo', '--both', action='store_true')
-
 
 
 args = parser.parse_args()
@@ -121,10 +120,10 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     pojinega_list = []
     active_list = []
     hashTags = []
-    cnt ={'昂':0, '怖':0, '安':0, '驚':0, '嫌':0, '好':0, '哀':0, '喜':0, '怒':0, '恥':0, ' ':0}
-    replace ={'takaburi':'昂', 'kowa':'怖', 'yasu':'安', 'odoroki':'驚', 'iya':'嫌', 'suki':'好','aware':'哀','yorokobi':'喜','ikari':'怒','haji':'恥','':' '}
+    cnt ={'喜':0,'好':0,'安':0,'哀':0,'嫌':0,'怒':0,'怖':0,'恥':0,'昂':0,'驚':0}
+    replace ={'yorokobi':'喜','suki':'好','yasu':'安','aware':'哀','iya':'嫌','ikari':'怒','kowa':'怖','haji':'恥','takaburi':'昂','odoroki':'驚'}
 
-    for index, text in enumerate(text_list):
+    for text in text_list:
         
         # 感情分析
         try:
@@ -147,11 +146,12 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
             pojinega = analyze['orientation']
             active = analyze['activation']
 
-            emotion_list.append(emotion)
+            emotion_list.append(replace[emotion])
             detail_list.append(detail)
             pojinega_list.append(pojinega)
             active_list.append(active)
-            #cnt['全感情'] += 1
+            cnt[replace[emotion]] += 1
+
         else:
             emotion_list.append('')
             detail_list.append('')
@@ -186,14 +186,8 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     else:
         # output==Trueの場合，df['emotion']は未定義と思われる
         print()
-            
-    # 5.感情ラベルの置き換え
-    for index, emotion in enumerate(emotion_list):
-        emotion_list[index] = replace[emotion]
-        cnt[replace[emotion]] += 1
-    del cnt[' ']
-    
-    # 6.感情語が占める割合を算出
+                
+    # 5.感情語が占める割合を算出
     emotion_ratio = []
     for value in cnt.values():
         try:
@@ -202,20 +196,20 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
             ratio = 0
         emotion_ratio.append(ratio)
 
-    # 7.各カテゴリの件数をリストに格納
+    # 6.各カテゴリの件数をリストに格納
     category_size = []
     try:
         category_size.append(len(df[df[label] == 1]))
-        category_size.append(len(df[df[label] == 2]))
-        category_size.append(len(df[df[label] == 0])) 
+        category_size.append(len(df[df[label] == 0]))
+        category_size.append(len(df[df[label] == 2])) 
     except KeyError:
         label ='label'
         print('ラベルを置き換えました')
         category_size.append(len(df[df[label] == 1]))
-        category_size.append(len(df[df[label] == 2]))
-        category_size.append(len(df[df[label] == 0])) 
+        category_size.append(len(df[df[label] == 0]))
+        category_size.append(len(df[df[label] == 2])) 
     
-    # 8.各カテゴリの割合をリストに格納
+    # 7.各カテゴリの割合をリストに格納
     category_ratio = []
     for element in category_size:
         try:
@@ -224,17 +218,18 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
             ratio = 0
         category_ratio.append(ratio)
     
-    # 9. 感情カテゴリの割合を表示
+    # 8. 感情カテゴリの割合をソート（可視化用）
     try:
         emo_percent = df.replace(' ', np.nan)
+        replace ={'喜':'Joy','好':'Fondness','安':'Relief','哀':'Gloom','嫌':'Dislike','怒':'Anger','怖':'Fear','恥':'Shame','昂':'Excitement','驚':'Surprize'}
+        emo_percent.replace(replace, inplace=True)
         emo_percent = emo_percent.dropna(subset=['emotion'])
         emo_percent.to_csv('result.csv')
-
         emo_percent = emo_percent['emotion'].value_counts(normalize=True) * 100
     except KeyError:
         pass
 
-    # 10.必要ならcsvで出力
+    # 9.必要ならcsvで出力
     if output == True:
         # 感情分析の結果を列に追加
         df['emotion'] = emotion_list
@@ -249,8 +244,8 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
 def create_ratioDF(dir, filter_type:int=None, output=False):
     # ディレクトリ内のファイル全てを対象にemotion_analyzerを適用する関数
 
-    emotion =['昂', '怖', '安', '驚', '嫌', '好', '哀', '喜', '怒', '恥']
-    category = ['1次情報','2次情報','1.5次情報']
+    emotion =['喜','好','安','哀','嫌','怒','怖','恥''昂','驚']
+    category = ['1次情報','1.5次情報','2次情報']
     df_emotion = pd.DataFrame(index=emotion)
     df_category = pd.DataFrame(index=category)
 
@@ -317,23 +312,23 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
         _, _, _, _, _, emo_percent2 = emotion_analyzer(dir, args.bar, filter_type=2, output=False)
         num = 3 if args.both else 2
         axes_ = fig.subplots(1, num)
-        axes_[0].set_title('1次情報')
-        axes_[1].set_title('1.5次情報')
-        axes_[0].set_ylabel('割合[%]')
+        axes_[0].set_title('Facts')
+        axes_[1].set_title('Others')
+        axes_[0].set_ylabel('Percentage[%]')
 
         emo_percent1[:].plot.bar(ax=axes_[0])
         emo_percent2[:].plot.bar(ax=axes_[1])
-        plt.setp(axes_[0].get_xticklabels(), rotation=360)
-        plt.setp(axes_[1].get_xticklabels(), rotation=360)
+        plt.setp(axes_[0].get_xticklabels(), rotation=90, fontsize=6)
+        plt.setp(axes_[1].get_xticklabels(), rotation=90, fontsize=6)
         
         print(emo_percent1)
         print(emo_percent2)
 
         if args.both:
             _, _, _, _, _, emo_percent3 = emotion_analyzer(dir, args.bar, filter_type=3, output=False)
-            axes_[2].set_title('1次 + 1.5次')
+            axes_[2].set_title('Facts+Others')
             emo_percent3[1:].plot.bar(ax=axes_[2])
-            plt.setp(axes_[2].get_xticklabels(), rotation=360)
+            plt.setp(axes_[2].get_xticklabels(), rotation=90, fontsize=6)
             print(emo_percent3)
 
 
