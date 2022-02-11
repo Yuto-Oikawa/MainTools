@@ -4,6 +4,8 @@ import os
 import shutil
 import argparse
 import time
+import jaconv
+import regex
 import spacy
 import MeCab
 import openpyxl
@@ -18,6 +20,8 @@ from sklearn.metrics import confusion_matrix, classification_report
 from sklearn import metrics
 from sklearn.metrics import make_scorer
 
+#from Okapi import Okapi
+
 parser = argparse.ArgumentParser()
 parser.add_argument('filename')
 parser.add_argument('-ho', '--holdout')
@@ -26,7 +30,7 @@ parser.add_argument('-sp', '--split', action='store_true')
 parser.add_argument('-a', '--annotate', action='store_true')
 parser.add_argument('-c', '--comparison', action='store_true')
 
-parser.add_argument('-f', '--fast', action='store_true')
+parser.add_argument('-all', '--all', action='store_true')
 parser.add_argument('-o', '--output', action='store_true')
 parser.add_argument('-m', '--mecab', action='store_true') 
 parser.add_argument('-pr', '--prauc', action='store_true')
@@ -42,14 +46,13 @@ parser.add_argument('-d', '--dependency', action='store_true')
 parser.add_argument('-n', '--NER', action='store_true')
 args = parser.parse_args()
 
-
-wakati = MeCab.Tagger("-Owakati")
 nlp = spacy.load('ja_ginza')
 vectorizer = TfidfVectorizer(token_pattern='(?u)\\b\\w+\\b')
+
 target_names = ['NOT','FOUND']
 
 
-def get_dirName(dir:str):
+def get_filename(dir:str):
     files = [f for f in os.listdir(dir)]
     files = [f for f in files if os.path.isfile(os.path.join(dir, f))]
 
@@ -68,38 +71,66 @@ def df_loader(data_name, sheet_name=None):
         df = pd.read_csv(data_name)
     elif 'tsv' in data_name:
         df = pd.read_csv(data_name, sep='\t')
+    elif 'txt':
+        df = pd.read_csv(data_name, names=('sentence','label'), sep='\t')
     
-    if args.kfold:
+    if not args.split:
         df = df.sample(frac=1, random_state=123)
 
     return df
+
+
+def normalize(_in):
+    _in = regex.sub(r"〓"," ",_in)
+    _in = regex.sub(r"\s\s+"," ",_in)
+    _in = regex.sub(r"^\s|\s$","",_in)
+    _in = jaconv.h2z(_in.upper(),kana=True,ascii=True,digit=True)
+    return _in
 
 
 def tokenize(x_train):
     result = []
 
     if args.mecab:
+        wakati = MeCab.Tagger("-r /dev/null -d  /usr/local/lib/mecab/dic/ipadic/ -Owakati")
+        #wakati = MeCab.Tagger("-Owakati")
+
         for sentence in x_train:
-            sentence = wakati.parse(sentence).split()
+            sentence = normalize(sentence)
             sentence_tokenize = ''
 
-            for token in sentence:
-                sentence_tokenize += token+'\n'
+            if args.lemmatize:
+                node = wakati.parseToNode(sentence)
+                while node:
+                    words_features = node.feature.split(',')
+
+                    if words_features[6] == '*':
+                        sentence_tokenize += node.surface + ' '
+                    else:
+                        sentence_tokenize += words_features[6] + ' '
+
+                    node = node.next
+
+            else:
+                sentence = wakati.parse(sentence).split()
+                for token in sentence:
+                    sentence_tokenize += token+' '
 
             result.append(sentence_tokenize)
 
     else:
         for sentence in x_train:
+            sentence = normalize(sentence)
             doc = nlp.tokenizer(str(sentence))
             sentence_tokenize = ''
             
             for token in doc:
                 if args.lemmatize:
-                    sentence_tokenize += token.lemma_+'\n'
+                    sentence_tokenize += token.lemma_+' '
                 elif args.tag:
-                    sentence_tokenize += token.tag_+'\n'
+                    sentence_tokenize += token.tag_+' '
                 elif args.pos:
-                    sentence_tokenize += token.pos_+'\n'
+                    sentence_tokenize += token.pos_+' '
                 elif args.tokenpos:
                     sentence_tokenize += token.pos_+' '+token.orth_+'|'   
                 elif args.lemmapos:
@@ -113,6 +144,15 @@ def tokenize(x_train):
             result.append(sentence_tokenize)
         
     return result
+
+
+def tokenize_okapi(x_train):
+    #wakati = MeCab.Tagger("-r /dev/null -d  /usr/local/lib/mecab/dic/ipadic/ -Owakati")
+    wakati = MeCab.Tagger("-Owakati")
+    sentence = normalize(x_train)
+    sentence = wakati.parse(sentence).split()
+        
+    return sentence
 
 
 def change_NER(x_train):
@@ -155,7 +195,8 @@ def change_NER(x_train):
 
 
 def create_train_data():
-    ### used by annotate_folder(), KFold_validation() and HoldOut_validation()
+    ### used by annotate_folder(), KFold_validation() and holdout_validation()
+    df = df_loader(args.filename)
 
     if args.kfold:
         train_df = df.replace({'NOT':0, 'FOUND':1})  
@@ -175,7 +216,7 @@ def create_train_data():
 
 
 def create_test_data(data_name, sheet_name=None):
-    ### used by annotate_folder(dir), HoldOut_validation
+    ### used by annotate_folder(dir), holdout_validation
     if args.annotate:
         test_df = df_loader(TARGET_DIR+data_name, sheet_name=sheet_name)
     elif args.holdout:
@@ -202,11 +243,11 @@ def create_test_data(data_name, sheet_name=None):
 
 
 def create_train_test_data(num:int=0):
-    df = df_loader(args.filename)
+    df = df_loader(args.filename).replace({'NOT':'x', 'FOUND':'o'})
 
     if args.split:
         k = int(len(df) / 10)
-        dfs = [df.loc[i:i+k-1000, :] for i in range(0, len(df), k)]
+        dfs = [df.loc[i:i+k-1, :] for i in range(0, len(df), k)]
         
         if len(dfs) == 11:
             test_df1 = dfs.pop(num)
@@ -238,6 +279,11 @@ def create_train_test_data(num:int=0):
         x_test = tokenize(raw_sentence)
         x_train = vectorizer.fit_transform(x_train)
         x_test = vectorizer.transform(x_test)
+        # f = tokenize_okapi
+        # o = Okapi(f)
+        # x_train = o.fit_transform(x_train)
+        # x_test = o.transform(raw_sentence)
+
 
     y_train = train_df.label.values.tolist()
     y_test = test_df.label.values.tolist()
@@ -259,7 +305,8 @@ def PR_AUC(y_true, y_pred):
     return pr_auc
 
 
-def HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, filename=None, n1=None, n2=None, n3=None, clf=CalibratedClassifierCV() ):
+def holdout_validation(x_train, y_train, x_test, y_test, raw_sentence, filename=None, n1=None, n2=None, n3=None, clf=CalibratedClassifierCV() ):
+    from sklearn.metrics import recall_score, precision_score, f1_score
     clf = clf
     clf.fit(x_train, y_train)
     predict = clf.predict(x_test)
@@ -267,31 +314,34 @@ def HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, filename=
     if args.split:
         print(confusion_matrix(y_test, predict))
         print(classification_report(y_test, predict, target_names=target_names))
+        print(f"Micro Precision:{precision_score(y_test, predict, average='micro'):.3f}")
+        print(f"Micro Recall:{recall_score(y_test, predict, average='micro'):.3f}")
+        print(f"Micro f1:{f1_score(y_test, predict, average='micro'):.3f}")
         if args.prauc:
             pr_auc = PR_AUC(y_test, predict)
-            print(f'PR_AUC:{pr_auc:.3f}')
+            print(f'PR_AUC:{pr_auc:.2f}')
             print()
 
     df = pd.DataFrame()
-    if not args.holdout:
+    if args.annotate:
         try:
             # Columns to be added to the output file
             df['n1'] = n1
             df['n2'] = n2
             df['n3'] = n3
         except: pass
-
         df['ann'] = predict
         df['res'] = ''
 
     else:
         df['true'] = y_test
         df['predict'] = predict
+
     df['sentence'] = raw_sentence
     
     if args.split:
-        # df = df.query(" true == 'x' and predict == 'o' ")
-        # df = df.query(" true == 'o' and predict == 'x' ") 
+        df = df.query(" true == 'x' and predict == 'o' ")
+        #df = df.query(" true == 'o' and predict == 'x' ") 
         pass
     return df
 
@@ -325,21 +375,22 @@ def KFold_validation(x_train, y_train, clf=CalibratedClassifierCV()):
             return -1, scores['test_f1_macro'].mean()
 
 
-def split_HoldOut():
+def split_holdout():
     df_list = []
     for num in range(0,10,2):
-        print(num)
+        print(f'split_hold_out No:{num}')
         x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3 = create_train_test_data(num)
-        result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence)
-        #result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3)
+        result = holdout_validation(x_train, y_train, x_test, y_test, raw_sentence)
+        #result = holdout_validation(x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3)
 
         if args.output:
             result.to_csv(f'split_{num}.tsv', sep='\t', index=False, encoding='utf_8_sig')
-            
+    
         df_list.append(result)
     df_all = pd.concat(df_list)
-    df_all.to_csv('result.tsv', sep='\t', index=False, encoding='utf_8_sig')
-    calc_frequency_words(df_all.sentence.values.tolist())
+    #df_all.to_csv('result.tsv', sep='\t', index=False, encoding='utf_8_sig')
+    df_all.to_csv(f'result.csv', index=False, encoding='utf_8_sig')
+
 
 
 def annotate_folder():
@@ -347,20 +398,19 @@ def annotate_folder():
     found_ranking  = {}
     OUTPUT_FILE = 'output.xlsx'
 
-    files = get_dirName(TARGET_DIR)
+    files = get_filename(TARGET_DIR)
     new = openpyxl.Workbook()
     new.save(OUTPUT_FILE)
 
     with pd.ExcelWriter(OUTPUT_FILE, mode='a') as writer:
-        start = time.time()
 
         for i, file in enumerate(sorted(files)):
             print(i, len(files))
             NG_count = 0
 
             x_test, y_test, raw_sentence, n1, n2, n3 = create_test_data(data_name=file)
-            df_result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, file)
-            #df_result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, file, n1,n2,n3)
+            df_result = holdout_validation(x_train, y_train, x_test, y_test, raw_sentence, file)
+            #df_result = holdout_validation(x_train, y_train, x_test, y_test, raw_sentence, file, n1,n2,n3)
 
             if args.output:
                 filename = str(filename).replace('.csv', '')
@@ -385,8 +435,6 @@ def annotate_folder():
     result.save(OUTPUT_FILE)
 
     print('Added',cnt)
-    elapsed_time = time.time() - start
-    print (f"elapsed_time:{elapsed_time:.3f}[sec]")
 
 
 def classifier_comparison(x_train, y_train, x_test, y_test):
@@ -404,8 +452,8 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
     ranking_time = {}
     
     error_classifier = ['CheckingClassifier', 'ClassifierChain', 'MultiOutputClassifier', 'OneVsOneClassifier', 'OneVsRestClassifier', 'OutputCodeClassifier', 'VotingClassifier', 'StackingClassifier']
-    low_speed_classifier = ['DecisionTreeClassifier','AdaBoostClassifier','LogisticRegressionCV','GradientBoostingClassifier','BaggingClassifier','SVC','RandomForestClassifier','ExtraTreesClassifier','MLPClassifier', 'RidgeClassifierCV']
-    if args.fast:
+    low_speed_classifier = ['DecisionTreeClassifier','AdaBoostClassifier','LogisticRegressionCV','GradientBoostingClassifier','BaggingClassifier','SVC','RandomForestClassifier','ExtraTreesClassifier','MLPClassifier', 'RidgeClassifierCV', 'KNeighborsClassifier']
+    if not args.all:
         error_classifier += low_speed_classifier
 
 
@@ -437,7 +485,7 @@ def classifier_comparison(x_train, y_train, x_test, y_test):
         print(classification_report(y_test, predict, digits = 2,target_names=target_names))
 
         if args.output:
-            result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, clf=model)
+            result = holdout_validation(x_train, y_train, x_test, y_test, raw_sentence, clf=model)
             result.to_csv(OUTPUT_DIR+name+'.tsv', sep='\t', index=False, encoding='utf_8_sig')
 
         if args.noValidate:
@@ -484,7 +532,8 @@ def calc_frequency_words(text_list:list):
     from pprint import pprint
 
     #You can use mecab-D to check the path.
-    m = MeCab.Tagger ('-d  /usr/local/lib/mecab/dic/ipadic/ -Ochasen')
+    m = MeCab.Tagger("-Owakati")
+    #m = MeCab.Tagger ('-r /dev/null -d  /usr/local/lib/mecab/dic/ipadic/ -Ochasen')
     
     # for text in text_list:
         # node = m.parseToNode(str(text))
@@ -509,8 +558,6 @@ def calc_frequency_words(text_list:list):
 
 
 if __name__ == '__main__':
-    df = df_loader(args.filename)
-    # calc_frequency_words(df.sentence.values.tolist())
     TARGET_DIR = 'tgtfiles/'
     OUTPUT_DIR = 'result/'
 
@@ -520,16 +567,20 @@ if __name__ == '__main__':
             x_test, y_test, raw_sentence, n1,n2,n3 = create_test_data(args.holdout)
             #x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3 = create_train_test_data()
 
-            result = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence)
-            #_ = HoldOut_validation(x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3)
+            result = holdout_validation(x_train, y_train, x_test, y_test, raw_sentence)
+            #_ = holdout_validation(x_train, y_train, x_test, y_test, raw_sentence, n1,n2,n3)
             result.to_csv('result.tsv', sep='\t', index=False, encoding='utf_8_sig')
 
     elif args.kfold:
+        start = time.time()
         x_train, y_train = create_train_data()
         KFold_validation(x_train,y_train)
+        elapsed_time = time.time() - start
+        print (f"elapsed_time:{elapsed_time:.3f}[sec]")
 
     elif args.split:
-        split_HoldOut()
+        split_holdout()
+        #calc_frequency_words(df_all.sentence.values.tolist())
 
     elif args.annotate:
         x_train, y_train = create_train_data()
