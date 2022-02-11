@@ -1,5 +1,8 @@
+### GiNZA==4 ###
 import re
 import os
+import regex
+import jaconv
 import argparse
 import collections
 from pprint import pprint
@@ -12,6 +15,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
 from mlask import MLAsk
 
+import MeCab
 import spacy
 from spacy.matcher import Matcher
 nlp = spacy.load('ja_ginza')
@@ -19,23 +23,22 @@ nlp = spacy.load('ja_ginza')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-t', '--time', action='store_true')
-parser.add_argument('-se', '--sentence')
+parser.add_argument('-se', '--sentence_analyze')
+parser.add_argument('-w', '--word_analyze')
 parser.add_argument('-ba', '--bar')
 parser.add_argument('-la', '--lineA', action='store_true')
 parser.add_argument('-lb', '--lineB', action='store_true')
+parser.add_argument('-bo', '--both', action='store_true')
 parser.add_argument('-co', '--content', action='store_true')
 parser.add_argument('-d', '--dataSize', action='store_true')
 parser.add_argument('-cr', '--cramer', action='store_true')
 parser.add_argument('-sp', '--spearman', action='store_true')
 parser.add_argument('-o', '--output', action='store_true')
-parser.add_argument('-bo', '--both', action='store_true')
-
-
 args = parser.parse_args()
 
 
 
-def get_dirName(dir:str):
+def get_file_name(dir:str):
     files = [f for f in os.listdir(dir)]
     files = [f for f in files if os.path.isfile(os.path.join(dir, f))]
 
@@ -221,7 +224,7 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     # 8. 感情カテゴリの割合をソート（可視化用）
     try:
         emo_percent = df.replace(' ', np.nan)
-        replace ={'喜':'Joy','好':'Fondness','安':'Relief','哀':'Gloom','嫌':'Dislike','怒':'Anger','怖':'Fear','恥':'Shame','昂':'Excitement','驚':'Surprize'}
+        #replace ={'喜':'Joy','好':'Fond','安':'Relief','哀':'Gloom','嫌':'Dislike','怒':'Anger','怖':'Fear','恥':'Shame','昂':'Excite','驚':'Surp'}
         emo_percent.replace(replace, inplace=True)
         emo_percent = emo_percent.dropna(subset=['emotion'])
         emo_percent.to_csv('result.csv')
@@ -252,7 +255,7 @@ def create_ratioDF(dir, filter_type:int=None, output=False):
     timeNames = []
     dataSize_list = []
     cramer_list = []
-    files = get_dirName(dir)
+    files = get_file_name(dir)
 
     for csvName in sorted(files):
 
@@ -312,23 +315,26 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
         _, _, _, _, _, emo_percent2 = emotion_analyzer(dir, args.bar, filter_type=2, output=False)
         num = 3 if args.both else 2
         axes_ = fig.subplots(1, num)
-        axes_[0].set_title('Facts')
-        axes_[1].set_title('Others')
-        axes_[0].set_ylabel('Percentage[%]')
+        axes_[0].set_title('事実')
+        axes_[1].set_title('その他')
+        axes_[0].set_ylabel('割合[%]')
 
         emo_percent1[:].plot.bar(ax=axes_[0])
         emo_percent2[:].plot.bar(ax=axes_[1])
-        plt.setp(axes_[0].get_xticklabels(), rotation=90, fontsize=6)
-        plt.setp(axes_[1].get_xticklabels(), rotation=90, fontsize=6)
+        
+        ROTATION = 0
+        SIZE = 10
+        plt.setp(axes_[0].get_xticklabels(), rotation=ROTATION, fontsize=SIZE)
+        plt.setp(axes_[1].get_xticklabels(), rotation=ROTATION, fontsize=SIZE)
         
         print(emo_percent1)
         print(emo_percent2)
 
         if args.both:
             _, _, _, _, _, emo_percent3 = emotion_analyzer(dir, args.bar, filter_type=3, output=False)
-            axes_[2].set_title('Facts+Others')
-            emo_percent3[1:].plot.bar(ax=axes_[2])
-            plt.setp(axes_[2].get_xticklabels(), rotation=90, fontsize=6)
+            axes_[2].set_title('事実+その他')
+            emo_percent3[:].plot.bar(ax=axes_[2])
+            plt.setp(axes_[2].get_xticklabels(), rotation=ROTATION, fontsize=SIZE)
             print(emo_percent3)
 
 
@@ -388,7 +394,7 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
         
         for dir in dir_name:
             dir += '/csv/'
-            files = get_dirName(dir)
+            files = get_file_name(dir)
             
             files = [s.replace('.csv','').replace(':','/') for s in files]
             label = str(dir).replace('/csv/', '')
@@ -431,7 +437,8 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
     # 6 スピアマンの順位相関係数
     elif spearman:
         emotion_variety = np.array(list(range(10)))
-        
+        title_name = ['1次情報', '1.5次情報']
+
         for i, title in zip(range(len(df_list)), title_name):
             correlation_list, emo_label = calc_spearman(df_list[i])
             if len(df_list) > 1:
@@ -471,12 +478,14 @@ def calc_frequency_words(text_list:list):
                 origin = node.feature.split(",")[6]
                 words.append(origin)
             node = node.next  
-                    
-    c = collections.Counter(words)
-    pprint(c.most_common(20))
+    try:
+        c = collections.Counter(words)
+        pprint(c.most_common(20))
+    except UnboundLocalError: pass
 
 
 def extract_phrase(text_list:list, word:str, front=True):
+    text_list = tokenize(text_list)
     docs = list(nlp.pipe(text_list, disable=['ner']))
 
     # Matcherの生成
@@ -516,138 +525,157 @@ def extract_phrase(text_list:list, word:str, front=True):
     return result_list
 
 
+def normalize(_in):
+    _in = regex.sub(r"〓"," ",_in)
+    _in = regex.sub(r"\s\s+"," ",_in)
+    _in = regex.sub(r"^\s|\s$","",_in)
+    _in = jaconv.h2z(_in.upper(),kana=True,ascii=True,digit=True)
+    return _in
+
+
+def tokenize(sentence_list):
+    result = []
+
+    wakati = MeCab.Tagger("-r /dev/null -d  /usr/local/lib/mecab/dic/ipadic/ -Owakati")
+    #wakati = MeCab.Tagger("-Owakati")
+
+    for sentence in sentence_list:
+        sentence = normalize(sentence)
+        sentence_tokenize = ''
+        node = wakati.parseToNode(sentence)
+        
+        while node:
+            words_features = node.feature.split(',')
+
+            if words_features[6] == '*':
+                sentence_tokenize += node.surface + ' '
+            else:
+                sentence_tokenize += words_features[6] + ' '
+            node = node.next
+
+        result.append(sentence_tokenize)
+        
+    return result
+
 
 
 if __name__ == '__main__':
     dir_name = ['#大雨', '#豪雨','#秋雨前線' ,'#線状降水帯', '#洪水', '#大雨特別警報', 'ALL']
     dir = 'ALL/csv/'
+    df_list = []
 
     if args.time:
         # csvファイルの列に投稿時刻を付与(txtファイルから時刻を取得)
         for dir in dir_name:
             dir += '/txt/'
-            files = get_dirName(dir)
+            files = get_file_name(dir)
             for txt in sorted(files):
                 attach_time(dir + str(txt))
                 
-                
-    elif args.sentence is not None:
+    elif args.sentence_analyze:
         # 単文の感情解析
         emotion_analyzer = MLAsk('-d /usr/local/lib/mecab/dic/ipadic/')
-        analyze = emotion_analyzer.analyze(args.sentence)
+        analyze = emotion_analyzer.analyze(args.sentence_analyze)
         print(analyze)
 
-
-    else:        
-        task = {1:'pri', 2:'ses', 3:'both', 4:'category', 5:'dataSize', 6:'cramer', 7:'spearman'}
-        df_list = []
+    elif args.word_analyze:
+        df = pd.read_csv(args.word_analyze)
+        df = df.query('pred==1')
+        df = df.query(' emotion=="安" ')
         
-        if args.bar:
-            dir = './'          
-            plot_data(dir, bar=True)
-            
-            # df = pd.read_csv(args.bar)
-            # df = df.query('pred==1')
-            # df = df.query(' emotion=="哀" ')
-            
-            # # 具体的な感情語
-            # # emo_count = df['detail'].value_counts()
-            # # pprint(emo_count)
-            
-            # # 特定の感情語でフィルタリング
-            # word = "['我慢']"
-            # df = df.query(' detail==@word ')
-            # # フレーズ抽出
-            # text_list = df.Text.values.tolist()
-            # word = word.replace("['", "").replace("']", "")
-            # result = extract_phrase(text_list, word, front=False)
-            # # 頻出フレーズを表示
-            # c = collections.Counter(result)
-            # pprint(c.most_common(3))
-            # print(len(result))
-            # print()
-                        
-            # 頻出単語
-            #calc_frequency_words(result)
-
+        # 具体的な感情語
+        emo_count = df['detail'].value_counts()
+        pprint(emo_count)
+        print()
         
-        elif (args.lineA or args.lineB) == True:
-            # for dir in dir_name:
-            #     dir += '/csv/'
+        # 特定の感情語でフィルタリング
+        word = "['落ち着く']"
+        df = df.query(' detail==@word ')
+        word = word.replace("['", "").replace("']", "")
 
-            dataSize_all = []
-            for filter_type in range(1,3):
-                print()
-                print('emotion:', task[filter_type])
-                timeNames, df_emotion, _, dataSize_list, _ = create_ratioDF(dir, filter_type, output=False)
-                df_list.append(df_emotion)
-                dataSize_all.append(dataSize_list)
-            pprint(dataSize_all)
-            
-            if args.lineA:
-                plot_data(dir, df_list, lineA=True)
-            if args.lineB:
-                plot_data(dir, df_list, lineB=True)
-            if args.output:
-                print()
-                print('csvのアウトプットは無効化されました')
-                print('(カテゴリのフィルタリングにより，データが欠落するため)')
-                print('-cまたは-dを指定して再度実行して下さい')
-
-
-        elif args.content:
-            # for dir in dir_name:
-            #     dir += '/csv/'
-            print(task[4])
-            timeNames, _, df_category, _, _ = create_ratioDF(dir, output=args.output)
-            df_list.append(df_category)
-            
-            files = get_dirName(dir)
-            if len(files) < 2:
-                print('警告: 一つのファイルのみが対象の場合，件数の推移を表示できません．')          
-            plot_data(dir, df_list, content=True)
+        # フレーズ抽出
+        text_list = df.Text.values.tolist()
+        result = extract_phrase(text_list, word, front=False)
+        
+        # 頻出フレーズを表示
+        # c = collections.Counter(result)
+        # pprint(c.most_common(3))
+        # print(len(result))
+        # print()
                     
-                
-        elif args.dataSize:
-            print(task[5])
-            plot_data(dataSize=True)
+        # # 頻出単語を表示
+        # calc_frequency_words(result)
 
+    elif args.bar:
+        dir = './'          
+        plot_data(dir, bar=True)
         
-        elif args.cramer:
-            print(task[6])
-            plot_data(cramer=True)
-            if args.output:
-                print()
-                print('csvのアウトプットは無効化されました')
-                print('(カテゴリのフィルタリングにより，データが欠落するため)')
-                print('-cまたは-dを指定して再度実行して下さい')
+    elif (args.lineA or args.lineB) == True:
+        task = {1:'pri', 2:'ses', 3:'both'}
+        # for dir in dir_name:
+        #     dir += '/csv/'
 
-
-        elif args.spearman:
-            title_name = ['1次情報', '1.5次情報']
-            print(task[7])
-            # for dir in dir_name:
-            #     dir += '/csv/'
-            _, df_emotion, _, _, _ = create_ratioDF(dir, filter_type=1, output=False)   # 1次
+        dataSize_all = []
+        for filter_type in range(1,3):
+            print()
+            print('emotion:', task[filter_type])
+            timeNames, df_emotion, _, dataSize_list, _ = create_ratioDF(dir, filter_type, output=False)
             df_list.append(df_emotion)
-            _, df_emotion2, _, _, _ = create_ratioDF(dir, filter_type=2, output=False)  # 1.5次
-            df_list.append(df_emotion2)
-            # _, df_emotion3, _, _, _ = create_ratioDF(dir, filter_type=3, output=False)  # 1次 + 1.5次
-            # df_list.append(df_emotion3)
+            dataSize_all.append(dataSize_list)
+        pprint(dataSize_all)
+        
+        if args.lineA:
+            plot_data(dir, df_list, lineA=True)
+        if args.lineB:
+            plot_data(dir, df_list, lineB=True)
+        if args.output:
+            print()
+            print('csvのアウトプットは無効化されました')
+            print('(カテゴリのフィルタリングにより，データが欠落するため)')
+            print('-cまたは-dを指定して再度実行して下さい')
 
+    elif args.content:
+        # for dir in dir_name:
+        #     dir += '/csv/'
+        timeNames, _, df_category, _, _ = create_ratioDF(dir, output=args.output)
+        df_list.append(df_category)
+        
+        files = get_file_name(dir)
+        if len(files) < 2:
+            print('警告: 一つのファイルのみが対象の場合，件数の推移を表示できません．')          
+        plot_data(dir, df_list, content=True)
                 
-            plot_data(dir, df_list, spearman=True)
-            
-            if args.output:
-                print()
-                print('csvのアウトプットは無効化されました')
-                print('(カテゴリのフィルタリングにより，データが欠落するため)')
-                print('-cまたは-dを指定して再度実行して下さい')
-
-
-
-        else:
+    elif args.dataSize:
+        plot_data(dataSize=True)
+    
+    elif args.cramer:
+        plot_data(cramer=True)
+        if args.output:
             print()
-            print('引数を指定して下さい')
-            print('(python3 emotion_analyzer.py -hで引数一覧を確認できます)')
+            print('csvのアウトプットは無効化されました')
+            print('(カテゴリのフィルタリングにより，データが欠落するため)')
+            print('-cまたは-dを指定して再度実行して下さい')
+
+    elif args.spearman:
+        # for dir in dir_name:
+        #     dir += '/csv/'
+        _, df_emotion, _, _, _ = create_ratioDF(dir, filter_type=1, output=False)   # 1次
+        df_list.append(df_emotion)
+        _, df_emotion2, _, _, _ = create_ratioDF(dir, filter_type=2, output=False)  # 1.5次
+        df_list.append(df_emotion2)
+        # _, df_emotion3, _, _, _ = create_ratioDF(dir, filter_type=3, output=False)  # 1次 + 1.5次
+        # df_list.append(df_emotion3)
+
+        plot_data(dir, df_list, spearman=True)
+        
+        if args.output:
             print()
+            print('csvのアウトプットは無効化されました')
+            print('(カテゴリのフィルタリングにより，データが欠落するため)')
+            print('-cまたは-dを指定して再度実行して下さい')
+
+    else:
+        print()
+        print('引数を指定して下さい')
+        print('(python3 emotion_analyzer.py -hで引数一覧を確認できます)')
+        print()
