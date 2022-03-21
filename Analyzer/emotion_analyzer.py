@@ -26,6 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-t', '--time', action='store_true')
 parser.add_argument('-se', '--sentence_analyze', action='store_true')
 parser.add_argument('-w', '--word_analyze')
+parser.add_argument('-f', '--file_analyze')
 parser.add_argument('-ba', '--bar')
 parser.add_argument('-la', '--lineA', action='store_true')
 parser.add_argument('-lb', '--lineB', action='store_true')
@@ -84,16 +85,12 @@ def cramersV(x, y):
     return np.sqrt(chisq / (n * (np.min(table.shape) - 1)))
 
 
-def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=True):
+def emotion_analyzer(df, filter_type:int=None, output=False, BERT=True):
     # 1つのファイルを対象に分析する関数
-
-    # データの読み込み
-    df = pd.read_csv(dir + csvName)
-    df = df.dropna(subset=['Text'])
+    df = df
 
     # カテゴリのフィルタリング
     label = 'pred' if BERT == True else 'label'
-    
     try:
         if filter_type == 1:
             df = df[df[label] == 1]
@@ -151,17 +148,17 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
             pojinega = analyze['orientation']
             active = analyze['activation']
 
-            if detail != ['非難']:
-                emotion_list.append(replace[emotion])
-                pojinega_list.append(pojinega)
-                active_list.append(active)
-                detail_list.append(detail)
-                cnt[replace[emotion]] += 1
-            else:
-                emotion_list.append('')
-                detail_list.append('')
-                pojinega_list.append('')
-                active_list.append('')
+            #if detail != ['非難']:
+            emotion_list.append(replace[emotion])
+            pojinega_list.append(pojinega)
+            active_list.append(active)
+            detail_list.append(detail)
+            cnt[replace[emotion]] += 1
+            #else:
+                # emotion_list.append('')
+                # detail_list.append('')
+                # pojinega_list.append('')
+                # active_list.append('')
                 
         else:
             emotion_list.append('')
@@ -169,9 +166,6 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
             pojinega_list.append('')
             active_list.append('')
 
-
-    # 0.ファイル名を表示
-    print(str(csvName))
     
     # 1.感情カテゴリの割合をソート（args.bar）
     try:
@@ -190,12 +184,11 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     df['detail'] = detail_list
     df['pojinega'] = pojinega_list
     df['activation'] = active_list
-
-    if not args.bar:
-        df = df.query(' emotion=="怒" ')
-        # 具体的な感情語
+    if not (args.bar or args.cramer or args.file_analyze):
+        df = df.query(' emotion=="怖" ')
         emo_count = df['detail'].value_counts()
         pprint(emo_count)
+        print('全感情語',np.sum(emo_count))
         
     # 3.データ件数を表示
     dataSize = len(text_list)
@@ -251,7 +244,7 @@ def emotion_analyzer(dir, csvName:str, filter_type:int=None, output=False, BERT=
     
     # 8.必要ならcsvで出力
     if output == True:
-        df.to_csv(dir+csvName, index=False)
+        df.to_csv('result.csv', index=False, encoding='utf_8_sig')
 
     return df, emotion_ratio, category_ratio, dataSize, cramer, emo_percent
 
@@ -273,8 +266,9 @@ def create_ratioDF(dir, filter_type:int=None, output=False):
     files = get_file_name(dir)
 
     for csvName in sorted(files):
-        df, emotion_ratio, category_ratio, dataSize, cramer, _ = emotion_analyzer(dir,str(csvName),filter_type, output)
-        df_list.append(df)
+        df = pd.read_csv(dir+str(csvName))
+        df2, emotion_ratio, category_ratio, dataSize, cramer, _ = emotion_analyzer(df, filter_type, output)
+        df_list.append(df2)
         dataSize_list.append(dataSize)
         cramer_list.append(cramer)
 
@@ -320,7 +314,7 @@ def calc_spearman(df_emotion):
     return correlation_list, emo_label
 
 
-def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=False, lineC=False, content=False, dataSize=False, cramer=False, spearman=False):
+def plot_data(dir:str=None, df_list:list=None, df=None, bar=False, lineA=False, lineB=False, lineC=False, content=False, dataSize=False, cramer=False, spearman=False):
     mpl.rcParams['font.family'] = 'Hiragino Maru Gothic Pro' # WindowsならYu GothicまたはMeiryo
     fig = plt.figure()
 
@@ -334,8 +328,8 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
 
     # 1 各感情の割合
     if bar:
-        _, _, _, _, _, emo_percent1 = emotion_analyzer(dir, args.bar, filter_type=1, output=False)
-        _, _, _, _, _, emo_percent2 = emotion_analyzer(dir, args.bar, filter_type=2, output=False)
+        _, _, _, _, _, emo_percent1 = emotion_analyzer(df, filter_type=1, output=False)
+        _, _, _, _, _, emo_percent2 = emotion_analyzer(df, filter_type=2, output=False)
         num = 3 if args.both else 2
         axes_ = fig.subplots(1, num)
         axes_[0].set_title('事実')
@@ -358,7 +352,7 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
         print(emo_percent2)
 
         if args.both:
-            _, _, _, _, _, emo_percent3 = emotion_analyzer(dir, args.bar, filter_type=3, output=False)
+            _, _, _, _, _, emo_percent3 = emotion_analyzer(df, filter_type=3, output=False)
             axes_[2].set_title('事実+その他')
             emo_percent3[:].plot.bar(ax=axes_[2])
             plt.setp(axes_[2].get_xticklabels(), rotation=ROTATION, fontsize=SIZE)
@@ -369,31 +363,31 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
     elif (lineA or lineB or lineC)==True:
         for i in range(len(df_list)):
             if lineA:
-                axes_[i].plot(timeNames,df_list[i].loc['喜'], label='喜',color='orange')
-                axes_[i].plot(timeNames,df_list[i].loc['哀'], label='哀',color='blue')
+                #axes_[i].plot(timeNames,df_list[i].loc['哀'], label='哀', color='blue')
+                axes_[i].plot(timeNames,df_list[i].loc['昂'], label='昂',color='gold')
                 axes_[i].plot(timeNames,df_list[i].loc['驚'], label='驚',color='tomato')
-                axes_[i].set_yticks([0,1,2,3,4,5,6,7,8])
+                axes_[i].set_yticks([0,0.5,1.0,1.5,2.0,2.5])
                 #plt.suptitle(f' 感情カテゴリの割合推移A') 
             elif lineB:
-                axes_[i].plot(timeNames,df_list[i].loc['怒'], label='Anger',color='red')
-                axes_[i].plot(timeNames,df_list[i].loc['昂'], label='Excitement', color='gold')
-                axes_[i].plot(timeNames,df_list[i].loc['恥'], label='Shame', color='magenta')
-                axes_[i].set_yticks([0,1,2,3,4])
+                axes_[i].plot(timeNames,df_list[i].loc['喜'], label='喜',color='orange')
+                axes_[i].plot(timeNames,df_list[i].loc['安'], label='安', color='green')
+                #axes_[i].plot(timeNames,df_list[i].loc['恥'], label='恥', color='magenta')
+                axes_[i].set_yticks([0,1,2,3,4,5,6,7])
                 #plt.suptitle(f'感情カテゴリの割合推移B')
                 
             elif lineC:
-                axes_[i].plot(timeNames,df_list[i].loc['安'], label='安', color='green')
+                #axes_[i].plot(timeNames,df_list[i].loc['怒'], label='怒',color='red')  
                 axes_[i].plot(timeNames,df_list[i].loc['嫌'], label='嫌', color='gray')
                 axes_[i].plot(timeNames,df_list[i].loc['怖'], label='怖', color='black')
-                axes_[i].set_yticks([0,2,4,6,8,10,12])
+                axes_[i].set_yticks([4,6,8,10,12])
                 #plt.suptitle(f'感情カテゴリの割合推移B')
 
             axes_[i].set_xticklabels(timeNames,rotation=270)
             axes_[i].legend(loc='upper right')
 
-        axes_[0].set_ylabel('Percentage[%]')
-        axes_[0].set_title('Facts')
-        axes_[1].set_title('Others')
+        axes_[0].set_ylabel('割合[%]')
+        axes_[0].set_title('事実')
+        axes_[1].set_title('その他')
         
         #axes_[2].set_title('1次情報 + 1.5次情報')
 
@@ -428,12 +422,14 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
     
     # 4 データ件数
     elif dataSize:
+        to_english = {'#大雨':'#Downpour','#豪雨':'#Heavy rain','#大雨特別警報':'#Special storm warning','#線状降水帯':'#Linear prediction','#洪水':'#Flooding','#秋雨前線':'#Autumn Rain'}
         for dir in dir_name:
             dir += '/csv/'
             files = get_file_name(dir)
             
             files = [s.replace('.csv','').replace(':','/') for s in files]
             label = str(dir).replace('/csv/', '')
+            label = to_english[label]
             dateName = sorted(files)        # 一日のツイートが1ファイルに格納されていると仮定
             dateName = [s.replace('2021-', '').replace('-','/') for s in dateName]
         
@@ -453,20 +449,24 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
     # 5 クラメールの連関係数
     elif cramer:        
         cramer_dict = {}
+        to_english = {'#大雨':'#Downpour','#豪雨':'#Heavy rain','#大雨特別警報':'#Special storm warning','#線状降水帯':'#Linear prediction','#洪水':'#Flooding','#秋雨前線':'#Autumn Rain'}
         for dir in dir_name:
             dir += '/csv/all/'
             _, _, _, _, cramer_list = create_ratioDF(dir, filter_type=3, output=False)
+            dir = dir.replace('/csv/all/','')
+            dir = to_english[dir]
             cramer_dict[dir] = np.average(cramer_list)
         
         # 降順にソート
         cramer_dict = dict(sorted(cramer_dict.items(), key=lambda x:x[1], reverse=True))
         cramer_avg = [v for v in cramer_dict.values()]
-        dir_label = [s.replace('/csv/all/','') for s in cramer_dict.keys()]
+        dir_label = [s for s in cramer_dict.keys()]
         print('全データ平均:', np.average(cramer_avg))
 
         data_num = np.array(list(range(len(cramer_avg))))
         plt.bar(data_num, cramer_avg, tick_label=dir_label, align="center")
         #plt.title("ハッシュタグごとの連関係数")
+        plt.xticks(rotation=345, fontsize=8)
         #plt.ylabel("値")
         plt.grid(True)
 
@@ -474,7 +474,7 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
     # 6 スピアマンの順位相関係数
     elif spearman:
         emotion_variety = np.array(list(range(10)))
-        title_name = ['Facts', 'Others']
+        title_name = ['事実', 'その他']
 
         for i, title in zip(range(len(df_list)), title_name):
             correlation_list, emo_label = calc_spearman(df_list[i])
@@ -491,8 +491,8 @@ def plot_data(dir:str=None, df_list:list=None, bar=False, lineA=False, lineB=Fal
                 axes_.set_title(f'{dir}')
                 plt.suptitle(f'スピアマンの順位相関係数 (経過時間-感情)')
         
-        #ROTATION = 0   # Japanese
-        ROTATION = 290  # English
+        ROTATION = 0   # Japanese
+        #ROTATION = 290  # English
         SIZE = 10
         plt.setp(axes_[0].get_xticklabels(), rotation=ROTATION, fontsize=SIZE)
         plt.setp(axes_[1].get_xticklabels(), rotation=ROTATION, fontsize=SIZE)
@@ -539,7 +539,7 @@ def extract_phrase(text_list:list, word:str, bigram=True):
     # パターンの追加
     #pattern = [{"POS": {"IN": ["NOUN", "PROPN"]}}, {"POS": {"IN": ["ADP"]}}, {"POS": {"IN": ["ADJ"]}},]
     #pattern = [{"POS": {"IN": ["NOUN", "PROPN"]}}, {"POS": {"IN": ["ADP"]}}, {"POS": {"IN": ["VERB"]}},]
-    pattern = [{"TEXT": {"REGEX": word}}, {}] if bigram else [{},{},{},{},{},{},{"TEXT": {"REGEX": word}},{}]
+    pattern = [{},{"TEXT": {"REGEX": word}}] if bigram else [{},{},{},{},{},{},{"TEXT": {"REGEX": word}},{}]
 
     matcher.add("", None, pattern)
     
@@ -591,8 +591,8 @@ def tokenize(sentence_list):
         
         while node:
             words_features = node.feature.split(',')
-            if '非難' in words_features[6]:
-                node = node.next
+            # if '非難' in words_features[6]:
+            #     node = node.next
 
             if words_features[6] == '*':
                 sentence_tokenize += node.surface + ' '
@@ -628,38 +628,41 @@ if __name__ == '__main__':
                 print(analyze)
             except EOFError:
                 break
+            
+    elif args.file_analyze:
+        df = pd.read_csv(args.file_analyze)
+        emotion_analyzer(df, output=args.output)
 
     elif args.word_analyze:
         df = pd.read_csv(args.word_analyze)
-        df = df.query('pred==0')
-        df = df.query(' emotion=="怒" ')
+        df = df.query('pred==1')
+        df = df.query(' emotion=="喜" ')
         
-        # 具体的な感情語
+        # 頻出感情語を表示
         emo_count = df['detail'].value_counts()
         pprint(emo_count)
+        print('全感情語',np.sum(emo_count))
         print()
         
-        # 特定の感情語でフィルタリング
-        word = "['非難']"
+        # フレーズ抽出
+        word = "['晴れる']"
         df = df.query(' detail==@word ')
         word = word.replace("['", "").replace("']", "")
-
-        # フレーズ抽出
         text_list = df.Text.values.tolist()
         result = extract_phrase(text_list, word, bigram=True)
         
         # 頻出フレーズを表示
-        # c = collections.Counter(result)
-        # pprint(c.most_common(3))
-        # print(len(result))
-        # print()
+        c = collections.Counter(result)
+        pprint(c.most_common(3))
+        print(len(result))
+        print()
                     
         # # 頻出単語を表示
         # calc_frequency_words(result)
 
     elif args.bar:
-        dir = './'
-        plot_data(dir, bar=True)
+        df = pd.read_csv(args.bar)
+        plot_data(df=df, bar=True)
 
     elif (args.lineA or args.lineB or args.lineC) == True:
         task = {1:'pri', 2:'ses', 3:'both'}
